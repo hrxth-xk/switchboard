@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  role         String        @default("USER")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  topics       Topic[]
+  applications Application[]
+  interviews   Interview[]
+  goals        Goal[]
+  notes        Note[]
+}
+
+model Topic {
+  id          String      @id @default(cuid())
+  userId      String
+  title       String
+  category    String
+  difficulty  String      @default("MEDIUM")
+  status      String      @default("TODO")
+  confidence  Int         @default(1)
+  solvedCount Int         @default(0)
+  targetCount Int         @default(10)
+  lastTouched DateTime    @default(now())
+  nextReview  DateTime?
+  resourceUrl String?
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, category])
+}
+
+model Application {
+  id        String            @id @default(cuid())
+  userId    String
+  company   String
+  roleTitle String
+  location  String?
+  source    String?
+  status    String   @default("WISHLIST")
+  appliedAt DateTime?
+  nextStep  String?
+  notes     String?
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model Interview {
+  id          String   @id @default(cuid())
+  userId      String
+  company     String
+  round       String
+  scheduledAt DateTime
+  focus       String
+  outcome     String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Goal {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  metric    String
+  target    Int
+  current   Int      @default(0)
+  dueDate   DateTime
+  done      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  tag       String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
