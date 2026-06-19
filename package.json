@@ -12,12 +12,14 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^6.19.3",
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.2",
     "bcryptjs": "^2.4.3",
     "jose": "^5.9.6",
     "lucide-react": "^0.468.0",
     "next": "^14.2.23",
-    "prisma": "^5.22.0",
+    "prisma": "^6.19.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tsx": "^4.19.2",
