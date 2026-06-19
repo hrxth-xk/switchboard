@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BriefcaseBusiness, CalendarPlus, NotebookPen, Plus, Target } from "lucide-react";
+import { BriefcaseBusiness, CalendarPlus, NotebookPen, Plus, Target, X } from "lucide-react";
 
 type Mode = "topic" | "application" | "goal" | "interview" | "note";
 
@@ -14,7 +14,65 @@ const modes: Array<{ id: Mode; label: string }> = [
   { id: "note", label: "Note" }
 ];
 
-export function QuickAdd() {
+export function QuickAddFab() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        className="fab"
+        type="button"
+        aria-label="Quick add"
+        onClick={() => setOpen(true)}
+      >
+        <Plus size={22} />
+      </button>
+
+      {open ? (
+        <div className="modal-overlay" role="presentation" onClick={() => setOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quick-add-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 className="panel-title" id="quick-add-title">
+                  Quick add
+                </h2>
+                <p className="panel-kicker">Capture progress while it is fresh.</p>
+              </div>
+              <button className="icon-button secondary modal-close" type="button" aria-label="Close" onClick={() => setOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <QuickAdd onClose={() => setOpen(false)} />
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function QuickAdd({ onClose }: { onClose?: () => void }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("topic");
   const [error, setError] = useState("");
@@ -38,18 +96,12 @@ export function QuickAdd() {
       return;
     }
 
+    onClose?.();
     router.refresh();
   }
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <div>
-          <h2 className="panel-title">Quick add</h2>
-          <p className="panel-kicker">Capture progress while it is fresh.</p>
-        </div>
-        <Plus size={18} />
-      </div>
+    <>
       <div className="toolbar" style={{ flexWrap: "wrap", marginBottom: 14 }}>
         {modes.map((item) => (
           <button
@@ -74,7 +126,7 @@ export function QuickAdd() {
           {loading ? "Saving" : "Save entry"}
         </button>
       </form>
-    </section>
+    </>
   );
 }
 
