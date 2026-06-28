@@ -17,7 +17,7 @@ export default async function LoginPage() {
         </div>
         <h1>Job switch progress, without the noise.</h1>
         <p className="subhead" style={{ marginBottom: 22 }}>
-          Track DSA, system design, applications, interviews, and goals in one clean mobile-friendly workspace.
+          Log problems, move applications, and ship portfolio work — one queue for what matters today.
         </p>
         <LoginForm />
         <Link className="button secondary" href="/signup" style={{ width: "100%", marginTop: 12 }}>

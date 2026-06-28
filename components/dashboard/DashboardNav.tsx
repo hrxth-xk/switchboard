@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tabs = [
-  { label: "Overview", href: "/dashboard" },
+  { label: "Dashboard", href: "/dashboard" },
   { label: "DSA", href: "/dashboard/dsa" },
   { label: "Applications", href: "/dashboard/applications" },
-  { label: "Interviews", href: "/dashboard/interviews" },
-  { label: "Notes", href: "/dashboard/notes" }
+  { label: "Projects", href: "/dashboard/projects" },
+  { label: "Activity", href: "/dashboard/activity" }
 ] as const;
 
 function isActive(pathname: string, href: string) {

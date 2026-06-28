@@ -2,17 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BriefcaseBusiness, CalendarPlus, NotebookPen, Plus, Target, X } from "lucide-react";
+import { BriefcaseBusiness, FolderKanban, NotebookPen, Plus, X } from "lucide-react";
+import { ReviewScheduleField } from "@/components/dsa/ReviewScheduleField";
+import type { ReviewPreset } from "@/lib/review-schedule";
 
-type Mode = "topic" | "application" | "goal" | "interview" | "note";
+type Mode = "problem" | "application" | "project" | "note";
 
-const modes: Array<{ id: Mode; label: string }> = [
-  { id: "topic", label: "Topic" },
-  { id: "application", label: "Application" },
-  { id: "goal", label: "Goal" },
-  { id: "interview", label: "Interview" },
-  { id: "note", label: "Note" }
+const modes: Array<{ id: Mode; label: string; short: string }> = [
+  { id: "problem", label: "DSA Problem", short: "DSA" },
+  { id: "application", label: "Application", short: "App" },
+  { id: "project", label: "Project", short: "Project" },
+  { id: "note", label: "Note", short: "Note" }
 ];
+
+const ACTIVE_APPLICATION_STATUSES = new Set(["APPLIED", "OA", "INTERVIEW", "OFFER", "REJECTED"]);
 
 export function QuickAddFab() {
   const [open, setOpen] = useState(false);
@@ -35,34 +38,36 @@ export function QuickAddFab() {
 
   return (
     <>
-      <button
-        className="fab"
-        type="button"
-        aria-label="Quick add"
-        onClick={() => setOpen(true)}
-      >
+      <button className="fab" type="button" aria-label="Quick add" onClick={() => setOpen(true)}>
         <Plus size={22} />
       </button>
 
       {open ? (
         <div className="modal-overlay" role="presentation" onClick={() => setOpen(false)}>
           <div
-            className="modal"
+            className="modal quick-add-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="quick-add-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="modal-header">
-              <div>
-                <h2 className="panel-title" id="quick-add-title">
-                  Quick add
-                </h2>
-                <p className="panel-kicker">Capture progress while it is fresh.</p>
+            <div className="quick-add-head">
+              <div className="modal-header">
+                <div>
+                  <h2 className="panel-title" id="quick-add-title">
+                    Quick add
+                  </h2>
+                  <p className="panel-kicker">Capture progress while it is fresh.</p>
+                </div>
+                <button
+                  className="icon-button secondary modal-close"
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setOpen(false)}
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <button className="icon-button secondary modal-close" type="button" aria-label="Close" onClick={() => setOpen(false)}>
-                <X size={18} />
-              </button>
             </div>
             <QuickAdd onClose={() => setOpen(false)} />
           </div>
@@ -74,206 +79,235 @@ export function QuickAddFab() {
 
 function QuickAdd({ onClose }: { onClose?: () => void }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("topic");
+  const [mode, setMode] = useState<Mode>("problem");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [reviewSchedule, setReviewSchedule] = useState<{ reviewPreset?: ReviewPreset; customReviewDate?: string }>({
+    reviewPreset: "oneWeek"
+  });
 
   async function submit(formData: FormData) {
     setLoading(true);
     setError("");
-    const payload = Object.fromEntries(formData.entries());
 
-    const response = await fetch("/api/progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, type: mode })
-    });
+    const resumeFile = formData.get("resumeFile");
+    const payload: Record<string, string> = Object.fromEntries(
+      [...formData.entries()]
+        .filter(([key, value]) => key !== "resumeFile" && typeof value === "string")
+        .map(([key, value]) => [key, String(value)])
+    );
 
-    setLoading(false);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({ error: "Could not save this item." }));
-      setError(body.error);
-      return;
+    if (mode === "problem") {
+      if (reviewSchedule.customReviewDate) {
+        payload.customReviewDate = reviewSchedule.customReviewDate;
+      } else if (reviewSchedule.reviewPreset) {
+        payload.reviewPreset = reviewSchedule.reviewPreset;
+      }
     }
 
-    onClose?.();
-    router.refresh();
+    try {
+      const response = await fetch("/api/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, type: mode })
+      });
+
+      const body = await response.json().catch(() => ({ error: "Could not save this item." }));
+
+      if (!response.ok) {
+        setError(body.error ?? "Could not save this item.");
+        return;
+      }
+
+      if (
+        mode === "application" &&
+        body.applicationId &&
+        resumeFile instanceof File &&
+        resumeFile.size > 0 &&
+        ACTIVE_APPLICATION_STATUSES.has(payload.status)
+      ) {
+        const uploadData = new FormData();
+        uploadData.append("file", resumeFile);
+        const uploadResponse = await fetch(`/api/applications/${body.applicationId}/resume`, {
+          method: "POST",
+          body: uploadData
+        });
+
+        if (!uploadResponse.ok) {
+          const uploadBody = await uploadResponse.json().catch(() => ({ error: "Could not upload resume." }));
+          setError(
+            uploadBody.error ??
+              "Application saved, but the resume upload failed. Edit the application to try again."
+          );
+          return;
+        }
+      }
+
+      onClose?.();
+      router.refresh();
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <>
-      <div className="toolbar" style={{ flexWrap: "wrap", marginBottom: 14 }}>
+      <div className="quick-add-tabs" role="tablist" aria-label="Quick add type">
         {modes.map((item) => (
           <button
             key={item.id}
-            className={`button ${mode === item.id ? "" : "secondary"}`}
+            className={`quick-add-tab${mode === item.id ? " active" : ""}`}
             type="button"
-            onClick={() => setMode(item.id)}
+            role="tab"
+            aria-selected={mode === item.id}
+            onClick={() => {
+              setMode(item.id);
+              setError("");
+            }}
           >
-            {item.label}
+            <span className="quick-add-tab-long">{item.label}</span>
+            <span className="quick-add-tab-short">{item.short}</span>
           </button>
         ))}
       </div>
-      <form action={submit} className="form-grid">
+
+      <form action={submit} className="form-grid quick-add-form">
         {error ? <div className="error wide">{error}</div> : null}
-        {mode === "topic" ? <TopicFields /> : null}
+        {mode === "problem" ? <ProblemFields onReviewChange={setReviewSchedule} /> : null}
         {mode === "application" ? <ApplicationFields /> : null}
-        {mode === "goal" ? <GoalFields /> : null}
-        {mode === "interview" ? <InterviewFields /> : null}
+        {mode === "project" ? <ProjectFields /> : null}
         {mode === "note" ? <NoteFields /> : null}
-        <button className="button wide" disabled={loading}>
+        <button className="button wide quick-add-submit" disabled={loading} type="submit">
           {modeIcon(mode)}
-          {loading ? "Saving" : "Save entry"}
+          {loading ? "Saving…" : "Save entry"}
         </button>
       </form>
     </>
   );
 }
 
-function TopicFields() {
+function ProblemFields({
+  onReviewChange
+}: {
+  onReviewChange: (value: { reviewPreset?: ReviewPreset; customReviewDate?: string }) => void;
+}) {
   return (
     <>
+      <label className="field wide">
+        <span>Problem name</span>
+        <input name="name" placeholder="Number of Islands" required />
+      </label>
+      <label className="field wide">
+        <span>Problem URL</span>
+        <input name="url" type="url" placeholder="https://leetcode.com/..." inputMode="url" />
+      </label>
       <label className="field">
         <span>Topic</span>
-        <input name="title" placeholder="Dynamic programming" required />
+        <input name="topic" placeholder="Graphs" required />
       </label>
       <label className="field">
-        <span>Category</span>
-        <select name="category" defaultValue="DSA">
-          <option>DSA</option>
-          <option>System Design</option>
-          <option>CS Fundamentals</option>
-          <option>Behavioral</option>
-        </select>
+        <span>Pattern</span>
+        <input name="pattern" placeholder="BFS, Union Find..." />
       </label>
-      <label className="field">
-        <span>Difficulty</span>
-        <select name="difficulty" defaultValue="MEDIUM">
-          <option value="EASY">Easy</option>
-          <option value="MEDIUM">Medium</option>
-          <option value="HARD">Hard</option>
-        </select>
-      </label>
-      <label className="field">
-        <span>Status</span>
-        <select name="status" defaultValue="LEARNING">
-          <option value="TODO">Todo</option>
-          <option value="LEARNING">Learning</option>
-          <option value="REVISING">Revising</option>
-          <option value="MASTERED">Mastered</option>
-        </select>
-      </label>
-      <label className="field">
-        <span>Solved</span>
-        <input name="solvedCount" type="number" min="0" defaultValue="0" required />
-      </label>
-      <label className="field">
-        <span>Target</span>
-        <input name="targetCount" type="number" min="1" defaultValue="10" required />
-      </label>
-      <label className="field">
+      <label className="field wide">
         <span>Confidence</span>
-        <input name="confidence" type="number" min="1" max="5" defaultValue="3" required />
+        <select name="confidence" defaultValue="3">
+          <option value="5">5 — Solved alone quickly</option>
+          <option value="4">4 — Solved alone slowly</option>
+          <option value="3">3 — Needed small hints</option>
+          <option value="2">2 — Needed major hints</option>
+          <option value="1">1 — Watched solution</option>
+        </select>
       </label>
-      <label className="field">
-        <span>Resource URL</span>
-        <input name="resourceUrl" type="url" placeholder="https://..." />
+      <label className="field wide">
+        <span>Notes</span>
+        <textarea name="notes" placeholder="Key insight, edge cases, time complexity..." />
       </label>
+      <ReviewScheduleField onChange={onReviewChange} />
     </>
   );
 }
 
 function ApplicationFields() {
+  const [status, setStatus] = useState("WISHLIST");
+  const showResume = ACTIVE_APPLICATION_STATUSES.has(status);
+
   return (
     <>
-      <label className="field">
+      <label className="field wide">
         <span>Company</span>
-        <input name="company" placeholder="Google" required />
+        <input name="company" placeholder="Stripe" required autoComplete="organization" />
       </label>
-      <label className="field">
+      <label className="field wide">
         <span>Role</span>
-        <input name="roleTitle" placeholder="SDE 1" required />
-      </label>
-      <label className="field">
-        <span>Location</span>
-        <input name="location" placeholder="Bengaluru / Remote" />
-      </label>
-      <label className="field">
-        <span>Source</span>
-        <input name="source" placeholder="Referral, LinkedIn..." />
+        <input name="role" placeholder="Backend Engineer" required />
       </label>
       <label className="field">
         <span>Status</span>
-        <select name="status" defaultValue="APPLIED">
+        <select name="status" value={status} onChange={(event) => setStatus(event.target.value)}>
           <option value="WISHLIST">Wishlist</option>
           <option value="APPLIED">Applied</option>
           <option value="OA">OA</option>
-          <option value="INTERVIEWING">Interviewing</option>
+          <option value="INTERVIEW">Interview</option>
           <option value="OFFER">Offer</option>
           <option value="REJECTED">Rejected</option>
         </select>
       </label>
+      <label className="field">
+        <span>Location</span>
+        <input name="location" placeholder="Remote / SF" />
+      </label>
+      <label className="field wide">
+        <span>Next action</span>
+        <input name="nextAction" placeholder="Finish OA, prep system design..." />
+      </label>
+      {showResume ? (
+        <div className="field wide resume-field">
+          <span>Resume</span>
+          <p className="field-hint">Attach the resume version you used for this application.</p>
+          <input
+            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="resume-input"
+            name="resumeFile"
+            type="file"
+          />
+        </div>
+      ) : null}
+      <details className="field wide advanced-fields">
+        <summary>More details</summary>
+        <div className="form-grid nested-grid">
+          <label className="field">
+            <span>Job ID</span>
+            <input name="jobId" placeholder="REQ-12345" />
+          </label>
+          <label className="field wide">
+            <span>Job URL</span>
+            <input name="jobUrl" type="url" placeholder="https://..." inputMode="url" />
+          </label>
+          <label className="field wide">
+            <span>Notes</span>
+            <textarea name="notes" placeholder="Recruiter, comp range, referral source..." />
+          </label>
+        </div>
+      </details>
+    </>
+  );
+}
+
+function ProjectFields() {
+  return (
+    <>
+      <label className="field wide">
+        <span>Title</span>
+        <input name="title" placeholder="Auth middleware" required />
+      </label>
       <label className="field wide">
         <span>Next step</span>
-        <input name="nextStep" placeholder="Ask for referral, follow up, prep graphs..." />
+        <input name="nextStep" placeholder="Wire JWT validation into middleware" required />
       </label>
       <label className="field wide">
         <span>Notes</span>
-        <textarea name="notes" placeholder="Recruiter name, job link, compensation notes..." />
-      </label>
-    </>
-  );
-}
-
-function GoalFields() {
-  return (
-    <>
-      <label className="field">
-        <span>Goal</span>
-        <input name="title" placeholder="Solve graph set" required />
-      </label>
-      <label className="field">
-        <span>Metric</span>
-        <input name="metric" placeholder="problems" required />
-      </label>
-      <label className="field">
-        <span>Target</span>
-        <input name="target" type="number" min="1" defaultValue="10" required />
-      </label>
-      <label className="field">
-        <span>Current</span>
-        <input name="current" type="number" min="0" defaultValue="0" required />
-      </label>
-      <label className="field wide">
-        <span>Due date</span>
-        <input name="dueDate" type="date" required />
-      </label>
-    </>
-  );
-}
-
-function InterviewFields() {
-  return (
-    <>
-      <label className="field">
-        <span>Company</span>
-        <input name="company" placeholder="Company" required />
-      </label>
-      <label className="field">
-        <span>Round</span>
-        <input name="round" placeholder="DSA screen" required />
-      </label>
-      <label className="field wide">
-        <span>Scheduled</span>
-        <input name="scheduledAt" type="datetime-local" required />
-      </label>
-      <label className="field wide">
-        <span>Focus</span>
-        <input name="focus" placeholder="Graphs, LLD, behavioral..." required />
-      </label>
-      <label className="field wide">
-        <span>Outcome</span>
-        <input name="outcome" placeholder="Optional result or feedback" />
+        <textarea name="notes" placeholder="Scope, constraints, links..." />
       </label>
     </>
   );
@@ -282,13 +316,13 @@ function InterviewFields() {
 function NoteFields() {
   return (
     <>
-      <label className="field">
+      <label className="field wide">
         <span>Title</span>
-        <input name="title" placeholder="Resume bullet idea" required />
+        <input name="title" placeholder="Amazon LP story" required />
       </label>
       <label className="field">
         <span>Tag</span>
-        <input name="tag" placeholder="Resume, Behavioral, DSA" required />
+        <input name="tag" placeholder="Behavioral, DSA, Resume" required />
       </label>
       <label className="field wide">
         <span>Note</span>
@@ -300,8 +334,7 @@ function NoteFields() {
 
 function modeIcon(mode: Mode) {
   if (mode === "application") return <BriefcaseBusiness size={18} />;
-  if (mode === "goal") return <Target size={18} />;
-  if (mode === "interview") return <CalendarPlus size={18} />;
   if (mode === "note") return <NotebookPen size={18} />;
+  if (mode === "project") return <FolderKanban size={18} />;
   return <Plus size={18} />;
 }

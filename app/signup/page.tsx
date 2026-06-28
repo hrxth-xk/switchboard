@@ -17,7 +17,7 @@ export default async function SignupPage() {
         </div>
         <h1>Create your tracker.</h1>
         <p className="subhead" style={{ marginBottom: 22 }}>
-          Start with a clean workspace for DSA, system design, applications, interviews, and goals.
+          A focused workspace for DSA problems, job applications, and portfolio projects.
         </p>
         <SignupForm />
         <Link className="button secondary" href="/login" style={{ width: "100%", marginTop: 12 }}>

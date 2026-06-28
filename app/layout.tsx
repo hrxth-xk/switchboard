@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Switchboard",
-  description: "Track DSA, system design, applications, interviews, and job-switch readiness."
+  description: "Know what to work on today — DSA problems, applications, and portfolio projects."
 };
 
 export const viewport: Viewport = {
