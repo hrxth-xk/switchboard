@@ -1,0 +1,5 @@
+ALTER TABLE "Application" DROP COLUMN IF EXISTS "resumeUsed";
+ALTER TABLE "Application" ADD COLUMN IF NOT EXISTS "resumeFileName" TEXT;
+ALTER TABLE "Application" ADD COLUMN IF NOT EXISTS "resumeFilePath" TEXT;
+ALTER TABLE "Application" ADD COLUMN IF NOT EXISTS "resumeFileSize" INTEGER;
+ALTER TABLE "Application" ADD COLUMN IF NOT EXISTS "resumeUploadedAt" TIMESTAMP(3);

@@ -3,9 +3,11 @@ import { DashboardNav } from "@/components/dashboard/DashboardNav";
 import { QuickAddFab } from "@/components/DashboardClient";
 import { LogoutButton } from "@/components/LogoutButton";
 import { requireUser } from "@/lib/auth";
+import { getUserDisplayLabel } from "@/lib/user-display";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  const displayName = getUserDisplayLabel(user);
 
   return (
     <main className="shell">
@@ -16,13 +18,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <span>Switchboard</span>
           </div>
           <div className="toolbar">
+            <span className="user-label">{displayName}</span>
             {user.role === "ADMIN" ? (
               <Link className="pill" href="/dashboard/admin">
                 Admin
               </Link>
-            ) : (
-              <span className="pill">User</span>
-            )}
+            ) : null}
             <LogoutButton />
           </div>
         </header>
