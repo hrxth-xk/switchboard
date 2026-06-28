@@ -1,18 +1,23 @@
-import { mkdir, unlink, writeFile } from "fs/promises";
-import path from "path";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { resumeFileExtension } from "@/lib/resume-utils";
 
-const UPLOAD_ROOT = path.join(process.cwd(), "uploads", "resumes");
+export const RESUME_BUCKET = "resumes";
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".doc", ".docx"]);
 
-export function resumeStoragePath(userId: string, applicationId: string, fileName: string) {
-  const safeName = fileName.replace(/[^\w.\-()+\s]/g, "_");
-  return path.join(userId, applicationId, safeName);
+export function resumeObjectPath(userId: string, applicationId: string, fileName: string) {
+  const extension = resumeFileExtension(fileName) || ".pdf";
+  return `${userId}/${applicationId}/resume${extension}`;
 }
 
-export function absoluteResumePath(relativePath: string) {
-  return path.join(UPLOAD_ROOT, relativePath);
+export function resumeContentType(fileName: string) {
+  const extension = resumeFileExtension(fileName);
+  if (extension === ".pdf") return "application/pdf";
+  if (extension === ".doc") return "application/msword";
+  if (extension === ".docx") {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  return "application/octet-stream";
 }
 
 export function validateResumeFile(file: File) {
@@ -30,26 +35,46 @@ export async function saveResumeFile(userId: string, applicationId: string, file
   const error = validateResumeFile(file);
   if (error) throw new Error(error);
 
-  const relativePath = resumeStoragePath(userId, applicationId, file.name);
-  const absolutePath = absoluteResumePath(relativePath);
-  await mkdir(path.dirname(absolutePath), { recursive: true });
-
+  const storagePath = resumeObjectPath(userId, applicationId, file.name);
   const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(absolutePath, buffer);
+  const supabase = getSupabaseAdmin();
+
+  const { error: uploadError } = await supabase.storage.from(RESUME_BUCKET).upload(storagePath, buffer, {
+    contentType: resumeContentType(file.name),
+    upsert: true
+  });
+
+  if (uploadError) {
+    throw new Error(uploadError.message || "Could not upload resume.");
+  }
 
   return {
     resumeFileName: file.name,
-    resumeFilePath: relativePath.replace(/\\/g, "/"),
+    resumeStoragePath: storagePath,
     resumeFileSize: file.size,
     resumeUploadedAt: new Date()
   };
 }
 
-export async function deleteResumeFile(relativePath: string | null | undefined) {
-  if (!relativePath) return;
-  try {
-    await unlink(absoluteResumePath(relativePath));
-  } catch {
+export async function readResumeFile(storagePath: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.storage.from(RESUME_BUCKET).download(storagePath);
+
+  if (error || !data) {
+    throw new Error("Resume file not found.");
+  }
+
+  return Buffer.from(await data.arrayBuffer());
+}
+
+export async function deleteResumeFile(storagePath: string | null | undefined) {
+  if (!storagePath) return;
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.storage.from(RESUME_BUCKET).remove([storagePath]);
+
+  if (error) {
     // File may already be gone.
+    console.warn(`Could not delete resume at ${storagePath}:`, error.message);
   }
 }
