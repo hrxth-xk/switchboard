@@ -1,27 +1,49 @@
-import { ProblemList } from "@/components/dsa/ProblemList";
-import { ProblemStatsStrip } from "@/components/dsa/ProblemStatsStrip";
-import { ReviewQueue } from "@/components/dsa/ReviewQueue";
+import { DsaTodayProgressSection } from "@/components/dsa/DsaTodayProgress";
+import { TrackedProblems } from "@/components/dsa/TrackedProblems";
+import { UpcomingRevisits } from "@/components/dsa/UpcomingRevisits";
 import { requireUser } from "@/lib/auth";
-import { getAllProblemsSorted, getProblemStats, getReviewQueue, serializeProblem } from "@/lib/problem-utils";
+import { DEFAULT_GOALS } from "@/lib/goals";
+import {
+  getAllProblemsSorted,
+  getDsaTodayProgress,
+  getUpcomingRevisits,
+  serializeProblem
+} from "@/lib/problem-utils";
+import { startOfDay } from "@/lib/period-utils";
 import { prisma } from "@/lib/db";
 
 export default async function DsaPage() {
   const user = await requireUser();
-  const problems = await prisma.problem.findMany({
-    where: { userId: user.id },
-    orderBy: { lastPracticed: "desc" }
-  });
-
   const now = new Date();
-  const stats = getProblemStats(problems, now);
-  const reviewQueue = getReviewQueue(problems, now);
-  const allProblems = getAllProblemsSorted(problems);
+  const dayStart = startOfDay(now);
+
+  const [problems, goals, activities] = await Promise.all([
+    prisma.problem.findMany({
+      where: { userId: user.id },
+      orderBy: { lastPracticed: "desc" }
+    }),
+    prisma.userGoals.findUnique({ where: { userId: user.id } }),
+    prisma.activity.findMany({
+      where: { userId: user.id, createdAt: { gte: dayStart } },
+      select: { label: true, createdAt: true }
+    })
+  ]);
+
+  const dailyGoal = goals?.dailyDsaGoal ?? DEFAULT_GOALS.dailyDsaGoal;
+  const todayProgress = getDsaTodayProgress(problems, activities, dailyGoal, now);
+  const upcoming = getUpcomingRevisits(problems, now).map(serializeProblem);
+  const tracked = getAllProblemsSorted(problems).map(serializeProblem);
 
   return (
     <div className="workspace-page">
-      <ProblemStatsStrip {...stats} />
-      <ReviewQueue problems={reviewQueue.map(serializeProblem)} />
-      <ProblemList problems={allProblems.map(serializeProblem)} />
+      <header className="page-header">
+        <h1 className="page-title">DSA</h1>
+        <p className="page-kicker">Stay consistent. Spaced repetition wins.</p>
+      </header>
+
+      <DsaTodayProgressSection progress={todayProgress} />
+      <UpcomingRevisits problems={upcoming} />
+      <TrackedProblems problems={tracked} />
     </div>
   );
 }

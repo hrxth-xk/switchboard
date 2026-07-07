@@ -67,3 +67,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser();
+  const { id } = await params;
+
+  const application = await prisma.application.findFirst({ where: { id, userId: user.id } });
+  if (!application) {
+    return NextResponse.json({ error: "Application not found." }, { status: 404 });
+  }
+
+  if (!application.resumeStoragePath) {
+    return NextResponse.json({ ok: true });
+  }
+
+  const storagePath = application.resumeStoragePath;
+
+  await prisma.application.update({
+    where: { id },
+    data: {
+      resumeFileName: null,
+      resumeStoragePath: null,
+      resumeUploadedAt: null
+    }
+  });
+
+  await deleteResumeFile(storagePath);
+  await logActivity(user.id, `Removed resume for ${application.company}`);
+
+  return NextResponse.json({ ok: true });
+}
