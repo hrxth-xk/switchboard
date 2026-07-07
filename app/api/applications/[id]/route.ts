@@ -78,3 +78,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser();
+  const { id } = await params;
+
+  const application = await prisma.application.findFirst({ where: { id, userId: user.id } });
+  if (!application) {
+    return NextResponse.json({ error: "Application not found." }, { status: 404 });
+  }
+
+  await prisma.application.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}

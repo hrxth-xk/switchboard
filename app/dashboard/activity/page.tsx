@@ -1,6 +1,6 @@
-import { ActivitySection } from "@/components/dashboard/command/ActivitySection";
+import { ActivityFeed } from "@/components/activity/ActivityFeed";
 import { requireUser } from "@/lib/auth";
-import { mapActivities } from "@/lib/activity-utils";
+import { mapActivityFeed } from "@/lib/activity-utils";
 import { prisma } from "@/lib/db";
 
 export default async function ActivityPage() {
@@ -8,16 +8,16 @@ export default async function ActivityPage() {
   const activities = await prisma.activity.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
-    take: 100
+    take: 500
   });
 
   return (
     <div className="workspace-page">
       <header className="page-header">
         <h1 className="page-title">Activity</h1>
-        <p className="page-kicker">History of moves across problems, applications, and projects</p>
+        <p className="page-kicker">A chronological log of everything you&apos;ve done</p>
       </header>
-      <ActivitySection items={mapActivities(activities, new Date())} />
+      <ActivityFeed items={mapActivityFeed(activities, new Date())} />
     </div>
   );
 }

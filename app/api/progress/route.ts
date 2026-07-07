@@ -41,6 +41,7 @@ const noteSchema = z.object({
 const projectSchema = z.object({
   type: z.literal("project"),
   title: z.string().min(2),
+  status: z.enum(["ACTIVE", "PAUSED", "COMPLETED"]).default("ACTIVE"),
   nextStep: z.string().min(2),
   notes: z.string().optional()
 });
@@ -176,7 +177,7 @@ export async function POST(request: Request) {
         title: data.title,
         nextStep: data.nextStep,
         notes: data.notes || null,
-        status: "ACTIVE"
+        status: data.status
       }
     });
     await logActivity(user.id, `Started project ${data.title}`);

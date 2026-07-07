@@ -106,7 +106,7 @@ model Application {
 
   resumeFileName   String?
 
-  resumeFilePath   String?
+  resumeStoragePath String?
 
   resumeFileSize   Int?
 

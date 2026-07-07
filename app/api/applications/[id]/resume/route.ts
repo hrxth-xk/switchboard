@@ -2,23 +2,27 @@ import { NextResponse } from "next/server";
 import { logActivity } from "@/lib/activity";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { absoluteResumePath, deleteResumeFile, saveResumeFile } from "@/lib/resume-storage";
-import { readFile } from "fs/promises";
+import {
+  deleteResumeFile,
+  readResumeFile,
+  resumeContentType,
+  saveResumeFile
+} from "@/lib/resume-storage";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
 
   const application = await prisma.application.findFirst({ where: { id, userId: user.id } });
-  if (!application?.resumeFilePath || !application.resumeFileName) {
+  if (!application?.resumeStoragePath || !application.resumeFileName) {
     return NextResponse.json({ error: "No resume on file." }, { status: 404 });
   }
 
   try {
-    const buffer = await readFile(absoluteResumePath(application.resumeFilePath));
+    const buffer = await readResumeFile(application.resumeStoragePath);
     return new NextResponse(buffer, {
       headers: {
-        "Content-Type": "application/octet-stream",
+        "Content-Type": resumeContentType(application.resumeFileName),
         "Content-Disposition": `attachment; filename="${application.resumeFileName}"`
       }
     });
@@ -44,13 +48,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
+    const oldStoragePath = application.resumeStoragePath;
     const resume = await saveResumeFile(user.id, application.id, file);
-    await deleteResumeFile(application.resumeFilePath);
 
     await prisma.application.update({
       where: { id },
       data: resume
     });
+
+    if (oldStoragePath && oldStoragePath !== resume.resumeStoragePath) {
+      await deleteResumeFile(oldStoragePath);
+    }
 
     await logActivity(user.id, `Uploaded resume for ${application.company}`);
     return NextResponse.json({ ok: true, resumeFileName: resume.resumeFileName });
@@ -58,4 +66,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const message = error instanceof Error ? error.message : "Could not upload resume.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser();
+  const { id } = await params;
+
+  const application = await prisma.application.findFirst({ where: { id, userId: user.id } });
+  if (!application) {
+    return NextResponse.json({ error: "Application not found." }, { status: 404 });
+  }
+
+  if (!application.resumeStoragePath) {
+    return NextResponse.json({ ok: true });
+  }
+
+  const storagePath = application.resumeStoragePath;
+
+  await prisma.application.update({
+    where: { id },
+    data: {
+      resumeFileName: null,
+      resumeStoragePath: null,
+      resumeUploadedAt: null
+    }
+  });
+
+  await deleteResumeFile(storagePath);
+  await logActivity(user.id, `Removed resume for ${application.company}`);
+
+  return NextResponse.json({ ok: true });
 }

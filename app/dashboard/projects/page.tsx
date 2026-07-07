@@ -1,10 +1,21 @@
-import { ProjectSection } from "@/components/projects/ProjectSection";
+import { ProjectsWorkspace } from "@/components/projects/ProjectsWorkspace";
 import { requireUser } from "@/lib/auth";
-import { projectsByStatus } from "@/lib/projects-utils";
+import type { ProjectStatus } from "@/lib/projects-utils";
 import { prisma } from "@/lib/db";
 
-export default async function ProjectsPage() {
+type ProjectsPageProps = {
+  searchParams: Promise<{ tab?: string }>;
+};
+
+function tabFromParam(value?: string): ProjectStatus {
+  if (value === "paused") return "PAUSED";
+  if (value === "completed") return "COMPLETED";
+  return "ACTIVE";
+}
+
+export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
   const user = await requireUser();
+  const { tab } = await searchParams;
 
   const projects = await prisma.project.findMany({
     where: { userId: user.id },
@@ -15,24 +26,9 @@ export default async function ProjectsPage() {
     <div className="workspace-page">
       <header className="page-header">
         <h1 className="page-title">Projects</h1>
-        <p className="page-kicker">Lightweight work containers — no subtasks</p>
+        <p className="page-kicker">What you should build next</p>
       </header>
-
-      <ProjectSection
-        title="Active projects"
-        projects={projectsByStatus(projects, "ACTIVE")}
-        emptyText="Nothing active"
-      />
-      <ProjectSection
-        title="Paused projects"
-        projects={projectsByStatus(projects, "PAUSED")}
-        emptyText="Nothing paused"
-      />
-      <ProjectSection
-        title="Completed projects"
-        projects={projectsByStatus(projects, "COMPLETED")}
-        emptyText="Nothing completed"
-      />
+      <ProjectsWorkspace initialTab={tabFromParam(tab)} projects={projects} />
     </div>
   );
 }
