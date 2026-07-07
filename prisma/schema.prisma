@@ -44,6 +44,26 @@ model User {
 
   activities   Activity[]
 
+  goals        UserGoals?
+
+}
+
+
+
+model UserGoals {
+
+  userId                   String   @id
+
+  dailyDsaGoal             Int      @default(3)
+
+  dailyApplicationsGoal    Int      @default(2)
+
+  dailyProjectSessionsGoal Int      @default(1)
+
+  updatedAt                DateTime @updatedAt
+
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
 }
 
 

@@ -2,7 +2,7 @@ import type { Application } from "@prisma/client";
 
 
 
-export const APPLICATION_STATUSES = ["WISHLIST", "APPLIED", "OA", "INTERVIEW", "OFFER", "REJECTED"] as const;
+export const APPLICATION_STATUSES = ["APPLIED", "WISHLIST", "REJECTED", "OA", "INTERVIEW", "OFFER"] as const;
 
 
 
@@ -44,18 +44,6 @@ export function getStatusCounts(applications: Application[]) {
     ])
   ) as Record<ApplicationStatus, number>;
 }
-
-
-
-const UPCOMING_PRIORITY: Record<string, number> = {
-
-  INTERVIEW: 0,
-
-  OA: 1,
-
-  APPLIED: 2
-
-};
 
 
 
@@ -143,38 +131,13 @@ export function groupApplicationsByStatus(applications: Application[]) {
 
 
 
-export function getUpcomingActions(applications: Application[], limit = 10) {
-
-  return applications
-
-    .filter((application) => UPCOMING_PRIORITY[application.status] !== undefined || application.nextAction)
-
-    .sort((left, right) => {
-
-      const leftPriority = UPCOMING_PRIORITY[left.status] ?? 99;
-
-      const rightPriority = UPCOMING_PRIORITY[right.status] ?? 99;
-
-      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
-
-
-
-      const leftTime = left.appliedAt?.getTime() ?? 0;
-
-      const rightTime = right.appliedAt?.getTime() ?? 0;
-
-      return rightTime - leftTime;
-
-    })
-
-    .slice(0, limit);
-
+export function applicationStatusTone(status: string): "positive" | "attention" | "neutral" {
+  if (status === "OFFER" || status === "INTERVIEW") return "positive";
+  if (status === "APPLIED" || status === "OA") return "attention";
+  return "neutral";
 }
 
-
-
 export function applicationNextAction(application: Application) {
-
   if (application.nextAction) return application.nextAction;
 
   if (application.status === "OA") return `Finish ${application.company} OA`;
@@ -186,7 +149,6 @@ export function applicationNextAction(application: Application) {
   if (application.status === "WISHLIST") return `Apply to ${application.company}`;
 
   return `Move ${application.company} forward`;
-
 }
 
 

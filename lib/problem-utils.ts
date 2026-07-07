@@ -1,6 +1,7 @@
 import type { Problem } from "@prisma/client";
 
 import { endOfDay } from "@/lib/review-schedule";
+import { endOfDay as periodEndOfDay, isWithinRange, startOfDay } from "@/lib/period-utils";
 
 
 
@@ -138,6 +139,57 @@ export function formatShortDate(value: string | Date) {
 }
 
 
+
+export function formatReviewDueLabel(value: string | Date, now = new Date()) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const today = startOfDay(now);
+  const target = startOfDay(date);
+  const diffDays = Math.round((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Tomorrow";
+  return formatShortDate(date);
+}
+
+export function getUpcomingRevisits(problems: Problem[], now = new Date()) {
+  const endToday = periodEndOfDay(now);
+
+  return problems
+    .filter((problem) => problem.nextReview && problem.nextReview > endToday)
+    .sort((left, right) => left.nextReview!.getTime() - right.nextReview!.getTime());
+}
+
+export type DsaTodayProgress = {
+  solvedToday: number;
+  solvedGoal: number;
+  revisitsCompletedToday: number;
+  revisitsDueToday: number;
+};
+
+export function getDsaTodayProgress(
+  problems: Problem[],
+  activities: { label: string; createdAt: Date }[],
+  dailyGoal: number,
+  now = new Date()
+): DsaTodayProgress {
+  const dayStart = startOfDay(now);
+  const dayEnd = periodEndOfDay(now);
+
+  const solvedToday = activities.filter(
+    (activity) => activity.label.startsWith("Solved ") && isWithinRange(activity.createdAt, dayStart, dayEnd)
+  ).length;
+
+  const revisitsCompletedToday = activities.filter(
+    (activity) => activity.label.startsWith("Revisited ") && isWithinRange(activity.createdAt, dayStart, dayEnd)
+  ).length;
+
+  return {
+    solvedToday,
+    solvedGoal: dailyGoal,
+    revisitsCompletedToday,
+    revisitsDueToday: getReviewQueue(problems, now).length
+  };
+}
 
 export function problemNextAction(problem: Problem, now = new Date()) {
 
