@@ -1,6 +1,9 @@
-import type { Application, Problem, Project } from "@prisma/client";
 import type { UserGoalsData } from "@/lib/goals";
 import { endOfDay, startOfDay } from "@/lib/period-utils";
+
+type ProblemTrendRow = { lastPracticed: Date };
+type ApplicationTrendRow = { appliedAt: Date | null; status: string };
+type ProjectTrendRow = { updatedAt: Date };
 
 export type ActivityTrendDay = {
   actions: number;
@@ -15,7 +18,7 @@ export type MonthlyActivityTrend = {
 /** Height % where the daily target line sits from the chart bottom. */
 export const TARGET_LINE_PERCENT = 68;
 
-function countDsaForDay(problems: Problem[], day: Date) {
+function countDsaForDay(problems: ProblemTrendRow[], day: Date) {
   const start = startOfDay(day);
   const end = endOfDay(day);
 
@@ -24,7 +27,7 @@ function countDsaForDay(problems: Problem[], day: Date) {
   ).length;
 }
 
-function countApplicationsForDay(applications: Application[], day: Date) {
+function countApplicationsForDay(applications: ApplicationTrendRow[], day: Date) {
   const start = startOfDay(day);
   const end = endOfDay(day);
 
@@ -37,7 +40,7 @@ function countApplicationsForDay(applications: Application[], day: Date) {
   ).length;
 }
 
-function countProjectsForDay(projects: Project[], day: Date) {
+function countProjectsForDay(projects: ProjectTrendRow[], day: Date) {
   const start = startOfDay(day);
   const end = endOfDay(day);
 
@@ -54,9 +57,9 @@ export function activityBarHeightPercent(actions: number, dailyTarget: number) {
 }
 
 export function buildMonthlyActivityTrend(
-  problems: Problem[],
-  applications: Application[],
-  projects: Project[],
+  problems: ProblemTrendRow[],
+  applications: ApplicationTrendRow[],
+  projects: ProjectTrendRow[],
   goals: UserGoalsData,
   now = new Date()
 ): MonthlyActivityTrend {

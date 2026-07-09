@@ -51,7 +51,7 @@ export function TrackedProblems({ problems }: TrackedProblemsProps) {
         <ul className="entity-card-list">
           {visible.map((problem) => (
             <li key={problem.id}>
-              <Link className="entity-card" href={`/dashboard/dsa/${problem.id}`}>
+              <Link className="entity-card" href={`/dashboard/dsa/${problem.id}`} prefetch={false}>
                 <div className="entity-card-top">
                   <p className="entity-card-title">{problem.name}</p>
                   <span className="entity-card-badge scan-topic">{problem.topic}</span>

@@ -8,6 +8,7 @@ import {
   normalizeJobId
 } from "@/lib/applications-utils";
 import { requireUser } from "@/lib/auth";
+import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
 import { normalizeProblemName } from "@/lib/problem-utils";
 import { resolveNextReviewDate, type ReviewPreset } from "@/lib/review-schedule";
@@ -104,6 +105,7 @@ export async function POST(request: Request) {
         }
       });
       await logActivities(user.id, [`Revisited ${name}`, `Solved ${name}`]);
+      revalidateUserDashboard(user.id);
       return NextResponse.json({ ok: true, updated: true });
     }
 
@@ -123,6 +125,7 @@ export async function POST(request: Request) {
     });
 
     await logActivities(user.id, [`Added problem ${name}`, `Solved ${name}`]);
+    revalidateUserDashboard(user.id);
   }
 
   if (data.type === "application") {
@@ -165,6 +168,7 @@ export async function POST(request: Request) {
       await logActivity(user.id, `Added ${data.company} to wishlist`);
     }
 
+    revalidateUserDashboard(user.id);
     return NextResponse.json({ ok: true, applicationId: application.id });
   }
 
@@ -178,6 +182,7 @@ export async function POST(request: Request) {
       }
     });
     await logActivity(user.id, `Added note ${data.title}`);
+    revalidateUserDashboard(user.id);
   }
 
   if (data.type === "project") {
@@ -191,6 +196,7 @@ export async function POST(request: Request) {
       }
     });
     await logActivity(user.id, `Started project ${data.title}`);
+    revalidateUserDashboard(user.id);
   }
 
   return NextResponse.json({ ok: true });

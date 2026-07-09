@@ -16,7 +16,7 @@ export function ProjectListCard({ project }: ProjectListCardProps) {
   const notesPreview = previewNotes(project.notes);
 
   return (
-    <Link className="entity-card project-entity-card" href={`/dashboard/projects/${project.id}`}>
+    <Link className="entity-card project-entity-card" href={`/dashboard/projects/${project.id}`} prefetch={false}>
       <div className="entity-card-top">
         <p className="entity-card-title">{project.title}</p>
         <span className={`entity-card-badge ${project.status === "ACTIVE" ? "tone-positive" : project.status === "PAUSED" ? "tone-attention" : ""}`.trim()}>

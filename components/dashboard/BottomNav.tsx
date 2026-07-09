@@ -14,14 +14,14 @@ export function BottomNav() {
 
   return (
     <nav className="bottom-nav" aria-label="Mobile navigation">
-      <Link href="/dashboard" className={`bottom-nav-item${onDashboard ? " active" : ""}`}>
+      <Link href="/dashboard" className={`bottom-nav-item${onDashboard ? " active" : ""}`} prefetch={false}>
         <LayoutGrid size={20} />
         <span>Dashboard</span>
       </Link>
 
       <div className="bottom-nav-fab-slot" aria-hidden="true" />
 
-      <Link href="/dashboard/more" className={`bottom-nav-item${onProfile ? " active" : ""}`}>
+      <Link href="/dashboard/more" className={`bottom-nav-item${onProfile ? " active" : ""}`} prefetch={false}>
         <UserRound size={20} />
         <span>Profile</span>
       </Link>

@@ -8,6 +8,7 @@ import {
   normalizeJobId
 } from "@/lib/applications-utils";
 import { requireUser } from "@/lib/auth";
+import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
 
 const updateSchema = z.object({
@@ -95,6 +96,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await logActivity(user.id, `Updated ${application.company} application`);
   }
 
+  revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }
 
@@ -108,5 +110,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   await prisma.application.delete({ where: { id } });
+  revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }

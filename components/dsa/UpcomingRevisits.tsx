@@ -16,7 +16,7 @@ export function UpcomingRevisits({ problems }: UpcomingRevisitsProps) {
         <ul className="revisit-cards">
           {problems.map((problem) => (
             <li key={problem.id}>
-              <Link className="revisit-card" href={`/dashboard/dsa/${problem.id}`}>
+              <Link className="revisit-card" href={`/dashboard/dsa/${problem.id}`} prefetch={false}>
                 <span className="revisit-card-date">
                   {problem.nextReview ? formatReviewDueLabel(problem.nextReview) : "—"}
                 </span>

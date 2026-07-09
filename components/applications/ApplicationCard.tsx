@@ -11,7 +11,7 @@ type ApplicationCardProps = {
 
 export function ApplicationCard({ application }: ApplicationCardProps) {
   return (
-    <Link className="entity-card application-entity-card" href={`/dashboard/applications/detail/${application.id}`}>
+    <Link className="entity-card application-entity-card" href={`/dashboard/applications/detail/${application.id}`} prefetch={false}>
       <div className="entity-card-top">
         <div className="application-card-brand">
           <span aria-hidden="true" className="application-card-logo">

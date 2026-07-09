@@ -1,4 +1,4 @@
-import type { ActionCardsData } from "@/lib/action-dashboard";
+import type { ActionCardMetrics } from "@/lib/action-dashboard";
 import { buildActionCards } from "@/lib/action-dashboard";
 import type { UserGoalsData } from "@/lib/goals";
 import { DEFAULT_GOALS } from "@/lib/goals";
@@ -11,10 +11,16 @@ import { prisma } from "@/lib/db";
 export type MacroDashboardData = {
   goals: UserGoalsData | null;
   progress: DashboardProgress;
-  actionCards: ActionCardsData;
+  actionCards: ReturnType<typeof buildActionCards>;
   weeklyBreakdown: WeeklyDayBreakdown[];
   activityTrend: MonthlyActivityTrend;
 };
+
+function trendWindowStart(now: Date) {
+  const start = startOfDay(now);
+  start.setDate(start.getDate() - 29);
+  return start;
+}
 
 export async function buildMacroDashboard(userId: string, now = new Date()): Promise<MacroDashboardData> {
   const monthStart = startOfMonth(now);
@@ -23,13 +29,17 @@ export async function buildMacroDashboard(userId: string, now = new Date()): Pro
   const weekStart = startOfWeek(now);
   const weekEnd = endOfWeek(now);
   const monthEnd = endOfMonth(now);
+  const trendStart = trendWindowStart(now);
 
   const [
     goals,
-    activities,
-    problems,
-    applications,
-    projects,
+    todayActivities,
+    trendProblems,
+    trendApplications,
+    trendProjects,
+    reviewDue,
+    activeApplications,
+    activeProjects,
     dailyDsa,
     weeklyDsa,
     monthlyDsa,
@@ -42,13 +52,31 @@ export async function buildMacroDashboard(userId: string, now = new Date()): Pro
   ] = await Promise.all([
     prisma.userGoals.findUnique({ where: { userId } }),
     prisma.activity.findMany({
-      where: { userId, createdAt: { gte: monthStart } },
+      where: { userId, createdAt: { gte: dayStart, lte: dayEnd } },
       select: { label: true, createdAt: true },
       orderBy: { createdAt: "desc" }
     }),
-    prisma.problem.findMany({ where: { userId } }),
-    prisma.application.findMany({ where: { userId } }),
-    prisma.project.findMany({ where: { userId } }),
+    prisma.problem.findMany({
+      where: { userId, lastPracticed: { gte: trendStart } },
+      select: { lastPracticed: true }
+    }),
+    prisma.application.findMany({
+      where: { userId, appliedAt: { gte: trendStart } },
+      select: { appliedAt: true, status: true }
+    }),
+    prisma.project.findMany({
+      where: { userId, updatedAt: { gte: trendStart } },
+      select: { updatedAt: true }
+    }),
+    prisma.problem.count({
+      where: { userId, nextReview: { not: null, lte: dayEnd } }
+    }),
+    prisma.application.count({
+      where: { userId, status: { in: ["APPLIED", "OA", "INTERVIEW"] } }
+    }),
+    prisma.project.count({
+      where: { userId, status: "ACTIVE" }
+    }),
     prisma.problem.count({ where: { userId, lastPracticed: { gte: dayStart, lte: dayEnd } } }),
     prisma.problem.count({ where: { userId, lastPracticed: { gte: weekStart, lte: weekEnd } } }),
     prisma.problem.count({ where: { userId, lastPracticed: { gte: monthStart, lte: monthEnd } } }),
@@ -68,7 +96,12 @@ export async function buildMacroDashboard(userId: string, now = new Date()): Pro
 
   const goalsData = goals ?? null;
   const effectiveGoals = goalsData ?? DEFAULT_GOALS;
-  const todayActivities = activities.filter((activity) => activity.createdAt >= dayStart);
+  const metrics: ActionCardMetrics = {
+    reviewDue,
+    activeApplications,
+    activeProjects
+  };
+
   const progress = buildDashboardProgress(
     {
       daily: { dsa: dailyDsa, applications: dailyApplications, projects: dailyProjects },
@@ -82,8 +115,8 @@ export async function buildMacroDashboard(userId: string, now = new Date()): Pro
   return {
     goals: goalsData,
     progress,
-    actionCards: buildActionCards(todayActivities, problems, applications, projects, goalsData, now),
-    weeklyBreakdown: buildWeeklyBreakdown(problems, applications, projects, effectiveGoals, now),
-    activityTrend: buildMonthlyActivityTrend(problems, applications, projects, effectiveGoals, now)
+    actionCards: buildActionCards(todayActivities, metrics, goalsData, now),
+    weeklyBreakdown: buildWeeklyBreakdown(trendProblems, trendApplications, trendProjects, effectiveGoals, now),
+    activityTrend: buildMonthlyActivityTrend(trendProblems, trendApplications, trendProjects, effectiveGoals, now)
   };
 }
