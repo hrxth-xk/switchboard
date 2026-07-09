@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MacroDashboardData } from "@/lib/macro-dashboard";
 import { DashboardHero } from "@/components/dashboard/macro/DashboardHero";
 import { DailyPage } from "@/components/dashboard/macro/DailyPage";
@@ -21,7 +21,9 @@ export function MacroDashboard({ data }: MacroDashboardProps) {
   const [activePage, setActivePage] = useState(0);
   const [showGoalsModal, setShowGoalsModal] = useState(!data.goals);
   const [slideWidth, setSlideWidth] = useState(0);
+  const [slideHeights, setSlideHeights] = useState<number[]>([]);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const slideRefs = useRef<(HTMLElement | null)[]>([]);
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
@@ -43,6 +45,32 @@ export function MacroDashboard({ data }: MacroDashboardProps) {
       window.removeEventListener("resize", measure);
     };
   }, []);
+
+  useLayoutEffect(() => {
+    const slides = slideRefs.current.filter(Boolean) as HTMLElement[];
+
+    function measureHeights() {
+      setSlideHeights(slides.map((slide) => slide.getBoundingClientRect().height));
+    }
+
+    if (!slides.length) return;
+
+    measureHeights();
+
+    const observers = slides.map((slide) => {
+      const observer = new ResizeObserver(measureHeights);
+      observer.observe(slide);
+      return observer;
+    });
+
+    return () => observers.forEach((observer) => observer.disconnect());
+  }, [data]);
+
+  function setSlideRef(index: number) {
+    return (element: HTMLElement | null) => {
+      slideRefs.current[index] = element;
+    };
+  }
 
   function goToPage(index: number) {
     setActivePage(Math.min(Math.max(index, 0), PAGE_COUNT - 1));
@@ -69,6 +97,9 @@ export function MacroDashboard({ data }: MacroDashboardProps) {
   };
 
   const slideStyle = slideWidth ? { width: slideWidth, minWidth: slideWidth, maxWidth: slideWidth } : undefined;
+  const activeHeight = slideHeights[activePage];
+  const viewportStyle =
+    activeHeight && activeHeight > 0 ? { height: activeHeight } : undefined;
 
   return (
     <>
@@ -78,11 +109,13 @@ export function MacroDashboard({ data }: MacroDashboardProps) {
         <div
           ref={viewportRef}
           className="macro-carousel-viewport"
+          style={viewportStyle}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
         >
           <div className="macro-carousel-track" style={trackStyle}>
             <section
+              ref={setSlideRef(0)}
               className="macro-page"
               style={slideStyle}
               aria-label="Daily progress"
@@ -91,20 +124,22 @@ export function MacroDashboard({ data }: MacroDashboardProps) {
               <DailyPage progress={data.progress.daily} />
             </section>
             <section
+              ref={setSlideRef(1)}
               className="macro-page"
               style={slideStyle}
               aria-label="Weekly progress"
               aria-hidden={activePage !== 1}
             >
-              <WeeklyPage progress={data.progress.weekly} />
+              <WeeklyPage days={data.weeklyBreakdown} />
             </section>
             <section
+              ref={setSlideRef(2)}
               className="macro-page"
               style={slideStyle}
               aria-label="Monthly progress"
               aria-hidden={activePage !== 2}
             >
-              <MonthlyPage monthly={data.progress.monthly} />
+              <MonthlyPage monthly={data.progress.monthly} activityTrend={data.activityTrend} />
             </section>
           </div>
         </div>

@@ -1,24 +1,17 @@
 "use client";
 
-import type { PeriodProgress } from "@/lib/progress-metrics";
-import { MacroGaugeRow } from "@/components/dashboard/macro/MacroGaugeRow";
-import { MacroTrackerRow } from "@/components/dashboard/macro/MacroTrackerRow";
+import { WeeklyConsistencyGrid } from "@/components/dashboard/macro/WeeklyConsistencyGrid";
+import type { WeeklyDayBreakdown } from "@/lib/weekly-breakdown";
 
 type WeeklyPageProps = {
-  progress: PeriodProgress;
+  days: WeeklyDayBreakdown[];
 };
 
-export function WeeklyPage({ progress }: WeeklyPageProps) {
+export function WeeklyPage({ days }: WeeklyPageProps) {
   return (
-    <div className="macro-panel macro-slide-panel">
+    <div className="macro-panel macro-slide-panel weekly-slide">
       <p className="macro-slide-label">This week</p>
-      <MacroGaugeRow
-        remaining={progress.remaining}
-        completed={progress.completed}
-        target={progress.target}
-        percent={progress.percent}
-      />
-      <MacroTrackerRow counts={progress.counts} targets={progress.targets} />
+      <WeeklyConsistencyGrid days={days} />
     </div>
   );
 }

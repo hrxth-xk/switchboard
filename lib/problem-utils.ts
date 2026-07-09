@@ -174,13 +174,20 @@ export function getDsaTodayProgress(
 ): DsaTodayProgress {
   const dayStart = startOfDay(now);
   const dayEnd = periodEndOfDay(now);
+  const problemNames = new Set(problems.map((problem) => problem.name));
 
   const solvedToday = activities.filter(
-    (activity) => activity.label.startsWith("Solved ") && isWithinRange(activity.createdAt, dayStart, dayEnd)
+    (activity) =>
+      activity.label.startsWith("Solved ") &&
+      isWithinRange(activity.createdAt, dayStart, dayEnd) &&
+      problemNames.has(activity.label.slice("Solved ".length))
   ).length;
 
   const revisitsCompletedToday = activities.filter(
-    (activity) => activity.label.startsWith("Revisited ") && isWithinRange(activity.createdAt, dayStart, dayEnd)
+    (activity) =>
+      activity.label.startsWith("Revisited ") &&
+      isWithinRange(activity.createdAt, dayStart, dayEnd) &&
+      problemNames.has(activity.label.slice("Revisited ".length))
   ).length;
 
   return {
