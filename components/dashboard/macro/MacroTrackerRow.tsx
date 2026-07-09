@@ -21,7 +21,7 @@ export function MacroTrackerRow({ counts, targets }: MacroTrackerRowProps) {
         const fillTone = fill >= 100 ? "positive" : fill > 0 ? "attention" : "neutral";
 
         return (
-          <Link key={key} href={METRIC_HREFS[key]} className="macro-tracker-col">
+          <Link key={key} href={METRIC_HREFS[key]} className="macro-tracker-col" prefetch={false}>
             <span className="macro-tracker-label">{METRIC_LABELS[key]}</span>
             <div className="macro-tracker-track">
               <div className={`macro-tracker-fill tone-${fillTone}`} style={{ width: `${fill}%` }} />

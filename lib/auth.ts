@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { SignJWT, jwtVerify } from "jose";
-import { prisma } from "@/lib/db";
 
 const COOKIE_NAME = "switchboard_session";
 
@@ -58,14 +57,7 @@ export const getSession = cache(async (): Promise<SessionUser | null> => {
 export const requireUser = cache(async () => {
   const session = await getSession();
   if (!session) redirect("/login");
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.id },
-    select: { id: true, name: true, email: true, role: true }
-  });
-
-  if (!user) redirect("/login");
-  return { ...user, role: user.role === "ADMIN" ? "ADMIN" : "USER" };
+  return session;
 });
 
 export const requireAdmin = cache(async () => {

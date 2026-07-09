@@ -36,7 +36,7 @@ export function ActionCardsGrid({ cards }: ActionCardsGridProps) {
   return (
     <section className="action-cards-grid" aria-label="Today's actions">
       {CARD_CONFIG.map((card) => (
-        <Link className="action-card" href={card.href} key={card.key}>
+        <Link className="action-card" href={card.href} key={card.key} prefetch={false}>
           <p className="action-card-title">{card.title}</p>
           <p className="action-card-subtitle">{card.subtitle}</p>
           <p className={`action-card-metric tone-${cards[card.key].tone}`}>{cards[card.key].metric}</p>

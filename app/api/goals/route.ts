@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
 import { serializeGoals } from "@/lib/goals";
 
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
     data: { userId: user.id, ...parsed.data }
   });
 
+  revalidateUserDashboard(user.id);
   return NextResponse.json({ goals: serializeGoals(goals) });
 }
 
@@ -50,5 +52,6 @@ export async function PATCH(request: Request) {
     update: parsed.data
   });
 
+  revalidateUserDashboard(user.id);
   return NextResponse.json({ goals: serializeGoals(goals) });
 }

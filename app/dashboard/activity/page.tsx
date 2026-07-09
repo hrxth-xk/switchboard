@@ -8,7 +8,7 @@ export default async function ActivityPage() {
   const activities = await prisma.activity.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
-    take: 500
+    take: 150
   });
 
   return (

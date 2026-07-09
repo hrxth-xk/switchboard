@@ -1,9 +1,5 @@
-import type { Application, Problem, Project } from "@prisma/client";
 import type { UserGoalsData } from "@/lib/goals";
 import { DEFAULT_GOALS } from "@/lib/goals";
-import { getApplicationStats } from "@/lib/applications-utils";
-import { getProjectStats } from "@/lib/projects-utils";
-import { getReviewQueue } from "@/lib/problem-utils";
 import { endOfDay, isWithinRange, startOfDay } from "@/lib/period-utils";
 
 type ActivityRow = {
@@ -12,6 +8,12 @@ type ActivityRow = {
 };
 
 export type AccentTone = "positive" | "attention" | "neutral";
+
+export type ActionCardMetrics = {
+  reviewDue: number;
+  activeApplications: number;
+  activeProjects: number;
+};
 
 export type ActionCardsData = {
   activity: {
@@ -54,19 +56,15 @@ function countTodayActivities(activities: ActivityRow[], now: Date) {
 
 export function buildActionCards(
   activities: ActivityRow[],
-  problems: Problem[],
-  applications: Application[],
-  projects: Project[],
+  metrics: ActionCardMetrics,
   goals: UserGoalsData | null,
   now = new Date()
 ): ActionCardsData {
   const effectiveGoals = goals ?? DEFAULT_GOALS;
   const todayCount = countTodayActivities(activities, now);
-  const reviewDue = getReviewQueue(problems, now).length;
+  const { reviewDue, activeApplications, activeProjects } = metrics;
   const solvedToday = countSolvedToday(activities, now);
   const problemsLeft = Math.max(effectiveGoals.dailyDsaGoal - solvedToday, 0);
-  const appStats = getApplicationStats(applications);
-  const projectStats = getProjectStats(projects);
 
   const dsaMetric =
     reviewDue > 0
@@ -75,9 +73,10 @@ export function buildActionCards(
         ? "1 problem left today"
         : `${problemsLeft} problems left today`;
 
-  const applicationLabel = appStats.active === 1 ? "1 Application" : `${appStats.active} Applications`;
+  const applicationLabel =
+    activeApplications === 1 ? "1 Application" : `${activeApplications} Applications`;
   const projectLabel =
-    projectStats.active === 1 ? "1 Active Project" : `${projectStats.active} Active Projects`;
+    activeProjects === 1 ? "1 Active Project" : `${activeProjects} Active Projects`;
 
   return {
     activity: {
@@ -90,14 +89,14 @@ export function buildActionCards(
       tone: reviewDue > 0 || problemsLeft > 0 ? "attention" : "positive"
     },
     applications: {
-      count: appStats.active,
-      metric: appStats.active === 0 ? "No active applications" : applicationLabel,
-      tone: appStats.active > 0 ? "positive" : "neutral"
+      count: activeApplications,
+      metric: activeApplications === 0 ? "No active applications" : applicationLabel,
+      tone: activeApplications > 0 ? "positive" : "neutral"
     },
     projects: {
-      count: projectStats.active,
-      metric: projectStats.active === 0 ? "No active projects" : projectLabel,
-      tone: projectStats.active > 0 ? "positive" : "neutral"
+      count: activeProjects,
+      metric: activeProjects === 0 ? "No active projects" : projectLabel,
+      tone: activeProjects > 0 ? "positive" : "neutral"
     }
   };
 }

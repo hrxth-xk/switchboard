@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logActivity } from "@/lib/activity";
 import { requireUser } from "@/lib/auth";
+import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
 
 const updateSchema = z.object({
@@ -49,6 +50,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await logActivity(user.id, `Updated project ${body.title ?? project.title}`);
   }
 
+  revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }
 
@@ -62,6 +64,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   await prisma.project.delete({ where: { id } });
+  revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }
-
+

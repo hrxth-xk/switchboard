@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logActivity } from "@/lib/activity";
 import { requireUser } from "@/lib/auth";
+import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
 import { normalizeProblemName } from "@/lib/problem-utils";
 import { resolveNextReviewDate, type ReviewPreset } from "@/lib/review-schedule";
@@ -80,6 +81,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   });
 
   await logActivity(user.id, isRevisit ? `Revisited ${nextName}` : `Updated ${nextName}`);
+  revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }
 
@@ -93,6 +95,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   await prisma.problem.delete({ where: { id } });
+  revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }
-
+
