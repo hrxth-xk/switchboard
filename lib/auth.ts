@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
 
@@ -42,7 +43,7 @@ export function clearSession() {
   cookies().delete(COOKIE_NAME);
 }
 
-export async function getSession(): Promise<SessionUser | null> {
+export const getSession = cache(async (): Promise<SessionUser | null> => {
   const token = cookies().get(COOKIE_NAME)?.value;
   if (!token) return null;
 
@@ -52,9 +53,9 @@ export async function getSession(): Promise<SessionUser | null> {
   } catch {
     return null;
   }
-}
+});
 
-export async function requireUser() {
+export const requireUser = cache(async () => {
   const session = await getSession();
   if (!session) redirect("/login");
 
@@ -65,10 +66,10 @@ export async function requireUser() {
 
   if (!user) redirect("/login");
   return { ...user, role: user.role === "ADMIN" ? "ADMIN" : "USER" };
-}
+});
 
-export async function requireAdmin() {
+export const requireAdmin = cache(async () => {
   const user = await requireUser();
   if (user.role !== "ADMIN") redirect("/dashboard");
   return user;
-}
+});
