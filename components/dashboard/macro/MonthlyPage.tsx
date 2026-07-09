@@ -1,48 +1,23 @@
 "use client";
 
-import Link from "next/link";
 import type { DashboardProgress } from "@/lib/progress-metrics";
-import { METRIC_HREFS, METRIC_LABELS, type MetricKey } from "@/lib/progress-metrics";
-
-const METRIC_ORDER: MetricKey[] = ["dsa", "applications", "projects"];
+import { MonthlyActivityChart } from "@/components/dashboard/macro/MonthlyActivityChart";
+import { MacroTrackerRow } from "@/components/dashboard/macro/MacroTrackerRow";
+import type { MonthlyActivityTrend } from "@/lib/monthly-activity-trend";
 
 type MonthlyPageProps = {
   monthly: DashboardProgress["monthly"];
+  activityTrend: MonthlyActivityTrend;
 };
 
-function formatDifference(value: number) {
-  if (value > 0) return `+${value}`;
-  return `${value}`;
-}
-
-export function MonthlyPage({ monthly }: MonthlyPageProps) {
+export function MonthlyPage({ monthly, activityTrend }: MonthlyPageProps) {
   return (
-    <div className="macro-panel macro-slide-panel macro-slide-panel-monthly">
+    <div className="macro-panel macro-slide-panel monthly-slide">
       <p className="macro-slide-label">This month</p>
 
-      <div className="macro-monthly-table">
-        <div className="macro-monthly-row macro-monthly-head">
-          <span />
-          <span>Target</span>
-          <span>Actual</span>
-          <span>Diff</span>
-        </div>
+      <MonthlyActivityChart days={activityTrend.days} dailyTarget={activityTrend.dailyTarget} />
 
-        {METRIC_ORDER.map((key: MetricKey) => (
-          <Link key={key} href={METRIC_HREFS[key]} className="macro-monthly-row">
-            <span className="macro-monthly-label">{METRIC_LABELS[key]}</span>
-            <span>{monthly.targets[key]}</span>
-            <span>{monthly.counts[key]}</span>
-            <span
-              className={
-                monthly.differences[key] >= 0 ? "macro-diff-positive" : "macro-diff-negative"
-              }
-            >
-              {formatDifference(monthly.differences[key])}
-            </span>
-          </Link>
-        ))}
-      </div>
+      <MacroTrackerRow counts={monthly.counts} targets={monthly.targets} />
     </div>
   );
 }

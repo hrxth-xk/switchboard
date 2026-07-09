@@ -2,14 +2,7 @@ import type { UserGoalsData } from "@/lib/goals";
 import {
   daysElapsedInMonth,
   daysElapsedInWeek,
-  daysInMonth,
-  endOfDay,
-  endOfMonth,
-  endOfWeek,
-  isWithinRange,
-  startOfDay,
-  startOfMonth,
-  startOfWeek
+  daysInMonth
 } from "@/lib/period-utils";
 
 export type MetricKey = "dsa" | "applications" | "projects";
@@ -35,45 +28,11 @@ export type DashboardProgress = {
   };
 };
 
-type ActivityRow = {
-  label: string;
-  createdAt: Date;
+type ProgressCountsByPeriod = {
+  daily: PeriodCounts;
+  weekly: PeriodCounts;
+  monthly: PeriodCounts;
 };
-
-function isDsaActivity(label: string) {
-  return label.startsWith("Solved ");
-}
-
-function isApplicationActivity(label: string) {
-  return label.startsWith("Applied to ") || label.endsWith(" to APPLIED");
-}
-
-function isProjectActivity(label: string) {
-  return (
-    label.startsWith("Started project ") ||
-    label.startsWith("Updated project ") ||
-    label.startsWith("Completed project ")
-  );
-}
-
-function classifyActivity(label: string): MetricKey | null {
-  if (isDsaActivity(label)) return "dsa";
-  if (isApplicationActivity(label)) return "applications";
-  if (isProjectActivity(label)) return "projects";
-  return null;
-}
-
-function countInRange(activities: ActivityRow[], start: Date, end: Date) {
-  const counts: PeriodCounts = { dsa: 0, applications: 0, projects: 0 };
-
-  for (const activity of activities) {
-    if (!isWithinRange(activity.createdAt, start, end)) continue;
-    const key = classifyActivity(activity.label);
-    if (key) counts[key] += 1;
-  }
-
-  return counts;
-}
 
 function dailyTargets(goals: UserGoalsData): PeriodCounts {
   return {
@@ -87,30 +46,45 @@ function sumCounts(counts: PeriodCounts) {
   return counts.dsa + counts.applications + counts.projects;
 }
 
+function capCountsByTargets(counts: PeriodCounts, targets: PeriodCounts): PeriodCounts {
+  return {
+    dsa: Math.min(counts.dsa, Math.max(targets.dsa, 0)),
+    applications: Math.min(counts.applications, Math.max(targets.applications, 0)),
+    projects: Math.min(counts.projects, Math.max(targets.projects, 0))
+  };
+}
+
+function metricPercent(count: number, target: number) {
+  if (target <= 0) return null;
+  return Math.min(Math.round((count / target) * 100), 100);
+}
+
 export function buildPeriodProgress(counts: PeriodCounts, targets: PeriodCounts): PeriodProgress {
-  const completed = sumCounts(counts);
+  const cappedCounts = capCountsByTargets(counts, targets);
+  const completed = sumCounts(cappedCounts);
   const target = sumCounts(targets);
   const remaining = Math.max(target - completed, 0);
-  const percent = target > 0 ? Math.min(Math.round((completed / target) * 100), 100) : 0;
+  const percentages = [
+    metricPercent(counts.dsa, targets.dsa),
+    metricPercent(counts.applications, targets.applications),
+    metricPercent(counts.projects, targets.projects)
+  ].filter((value): value is number => value !== null);
+  const percent =
+    percentages.length > 0
+      ? Math.round(percentages.reduce((sum, value) => sum + value, 0) / percentages.length)
+      : 0;
 
   return { counts, targets, completed, target, remaining, percent };
 }
 
 export function buildDashboardProgress(
-  activities: ActivityRow[],
+  counts: ProgressCountsByPeriod,
   goals: UserGoalsData,
   now = new Date()
 ): DashboardProgress {
-  const dayStart = startOfDay(now);
-  const dayEnd = endOfDay(now);
-  const weekStart = startOfWeek(now);
-  const weekEnd = endOfWeek(now);
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
-
-  const dailyCounts = countInRange(activities, dayStart, dayEnd);
-  const weeklyCounts = countInRange(activities, weekStart, weekEnd);
-  const monthlyCounts = countInRange(activities, monthStart, monthEnd);
+  const dailyCounts = counts.daily;
+  const weeklyCounts = counts.weekly;
+  const monthlyCounts = counts.monthly;
 
   const perDay = dailyTargets(goals);
 
