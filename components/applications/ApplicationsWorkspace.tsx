@@ -3,7 +3,12 @@
 import { useMemo, useState } from "react";
 import type { Application } from "@prisma/client";
 import { ApplicationCard } from "@/components/applications/ApplicationCard";
-import { APPLICATION_STATUSES, STATUS_LABELS, type ApplicationStatus } from "@/lib/applications-utils";
+import {
+  APPLICATION_STATUSES,
+  getStatusCounts,
+  STATUS_LABELS,
+  type ApplicationStatus
+} from "@/lib/applications-utils";
 
 type ApplicationsWorkspaceProps = {
   applications: Application[];
@@ -12,6 +17,7 @@ type ApplicationsWorkspaceProps = {
 
 export function ApplicationsWorkspace({ applications, initialTab = "APPLIED" }: ApplicationsWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<ApplicationStatus>(initialTab);
+  const counts = useMemo(() => getStatusCounts(applications), [applications]);
 
   const filtered = useMemo(
     () => applications.filter((application) => application.status === activeTab),
@@ -30,7 +36,8 @@ export function ApplicationsWorkspace({ applications, initialTab = "APPLIED" }: 
             type="button"
             aria-selected={activeTab === status}
           >
-            {STATUS_LABELS[status]}
+            <span className="segmented-btn-label">{STATUS_LABELS[status]}</span>
+            <span className="segmented-btn-count">({counts[status]})</span>
           </button>
         ))}
       </div>

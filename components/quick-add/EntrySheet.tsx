@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { BriefcaseBusiness, Download, FolderKanban, NotebookPen, Plus, X } from "lucide-react";
 import { QuickAddReviewChips } from "@/components/quick-add/QuickAddReviewChips";
+import {
+  EntrySheetSubmitError,
+  mapApiFieldErrors,
+  validateEntryPayload
+} from "@/components/quick-add/entry-sheet-validation";
 import {
   type EditTarget,
   type SheetMode,
@@ -11,6 +16,7 @@ import {
   topicPatternValue
 } from "@/components/quick-add/entry-sheet-types";
 import { APPLICATION_STATUSES, STATUS_LABELS } from "@/lib/applications-utils";
+import type { FieldErrors } from "@/lib/api-errors";
 import type { ReviewPreset } from "@/lib/review-schedule";
 import { reviewDateFromPreset } from "@/lib/review-schedule";
 
@@ -109,7 +115,8 @@ function EntrySheetForm({
 
   const [mode, setMode] = useState<SheetMode>(editTarget ? sheetModeFromEditTarget(editTarget) : "problem");
   const [fieldsVisible, setFieldsVisible] = useState(true);
-  const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [toast, setToast] = useState("");
   const [loading, setLoading] = useState(false);
   const [resumeRemoved, setResumeRemoved] = useState(false);
   const [reviewSchedule, setReviewSchedule] = useState<{ reviewPreset?: ReviewPreset; customReviewDate?: string }>(() =>
@@ -122,15 +129,43 @@ function EntrySheetForm({
     setFieldsVisible(false);
     window.setTimeout(() => {
       setMode(next);
-      setError("");
+      setFieldErrors({});
+      setToast("");
       scrollRef.current?.scrollTo(0, 0);
       setFieldsVisible(true);
     }, 140);
   }
 
+  function clearFieldError(name: string) {
+    setFieldErrors((current) => {
+      if (!current[name]) return current;
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+  }
+
+  function scrollToFirstError(errors: FieldErrors) {
+    const firstKey = Object.keys(errors)[0];
+    if (!firstKey || !scrollRef.current) return;
+    const field = scrollRef.current.querySelector(`[data-field="${firstKey}"]`);
+    if (field instanceof HTMLElement) {
+      field.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function handleSubmitFailure(message: string, errors: FieldErrors = {}) {
+    setFieldErrors(errors);
+    setToast(message);
+    if (Object.keys(errors).length > 0) {
+      window.requestAnimationFrame(() => scrollToFirstError(errors));
+    }
+  }
+
   async function submit(formData: FormData) {
     setLoading(true);
-    setError("");
+    setFieldErrors({});
+    setToast("");
 
     const resumeFile = formData.get("resumeFile");
     const payload: Record<string, string> = Object.fromEntries(
@@ -138,6 +173,13 @@ function EntrySheetForm({
         .filter(([key, value]) => key !== "resumeFile" && typeof value === "string")
         .map(([key, value]) => [key, String(value)])
     );
+
+    const clientErrors = validateEntryPayload(mode, payload);
+    if (Object.keys(clientErrors).length > 0) {
+      setLoading(false);
+      handleSubmitFailure("Please correct the highlighted fields.", clientErrors);
+      return;
+    }
 
     if (mode === "problem") {
       const topicPattern = (payload.topicPattern ?? "").trim();
@@ -169,7 +211,16 @@ function EntrySheetForm({
       onClose();
       router.refresh();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Could not save this item.");
+      if (submitError instanceof EntrySheetSubmitError) {
+        handleSubmitFailure(
+          submitError.message,
+          submitError.fieldErrors ?? {}
+        );
+      } else {
+        handleSubmitFailure(
+          submitError instanceof Error ? submitError.message : "Unable to save this item."
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -189,7 +240,10 @@ function EntrySheetForm({
     const body = await response.json().catch(() => ({ error: "Could not save this item." }));
 
     if (!response.ok) {
-      throw new Error(body.error ?? "Could not save this item.");
+      throw new EntrySheetSubmitError(
+        body.error ?? "Could not save this item.",
+        mapApiFieldErrors(body.fieldErrors)
+      );
     }
 
     if (
@@ -208,8 +262,9 @@ function EntrySheetForm({
 
       if (!uploadResponse.ok) {
         const uploadBody = await uploadResponse.json().catch(() => ({ error: "Could not upload resume." }));
-        throw new Error(
-          uploadBody.error ?? "Application saved, but the resume upload failed. Edit the application to try again."
+        throw new EntrySheetSubmitError(
+          uploadBody.error ?? "Unable to save application.",
+          uploadBody.fieldErrors
         );
       }
     }
@@ -229,7 +284,12 @@ function EntrySheetForm({
         body: JSON.stringify(payload)
       });
       const body = await response.json().catch(() => ({ error: "Could not save changes." }));
-      if (!response.ok) throw new Error(body.error ?? "Could not save changes.");
+      if (!response.ok) {
+        throw new EntrySheetSubmitError(
+          body.error ?? "Could not save changes.",
+          mapApiFieldErrors(body.fieldErrors)
+        );
+      }
       return;
     }
 
@@ -240,13 +300,18 @@ function EntrySheetForm({
         body: JSON.stringify(payload)
       });
       const body = await response.json().catch(() => ({ error: "Could not save changes." }));
-      if (!response.ok) throw new Error(body.error ?? "Could not save changes.");
+      if (!response.ok) {
+        throw new EntrySheetSubmitError(
+          body.error ?? "Could not save changes.",
+          mapApiFieldErrors(body.fieldErrors)
+        );
+      }
 
       if (removeResume) {
         const deleteResponse = await fetch(`/api/applications/${target.data.id}/resume`, { method: "DELETE" });
         if (!deleteResponse.ok) {
           const deleteBody = await deleteResponse.json().catch(() => ({ error: "Could not remove resume." }));
-          throw new Error(deleteBody.error ?? "Application saved, but removing the resume failed.");
+          throw new EntrySheetSubmitError(deleteBody.error ?? "Unable to save application.");
         }
       }
 
@@ -263,7 +328,7 @@ function EntrySheetForm({
         });
         if (!uploadResponse.ok) {
           const uploadBody = await uploadResponse.json().catch(() => ({ error: "Could not upload resume." }));
-          throw new Error(uploadBody.error ?? "Application saved, but the resume upload failed.");
+          throw new EntrySheetSubmitError(uploadBody.error ?? "Unable to save application.");
         }
       }
       return;
@@ -276,11 +341,16 @@ function EntrySheetForm({
         body: JSON.stringify(payload)
       });
       const body = await response.json().catch(() => ({ error: "Could not save changes." }));
-      if (!response.ok) throw new Error(body.error ?? "Could not save changes.");
+      if (!response.ok) {
+        throw new EntrySheetSubmitError(
+          body.error ?? "Could not save changes.",
+          mapApiFieldErrors(body.fieldErrors)
+        );
+      }
       return;
     }
 
-    throw new Error("This entry type cannot be edited here.");
+    throw new EntrySheetSubmitError("This entry type cannot be edited here.");
   }
 
   return (
@@ -301,13 +371,14 @@ function EntrySheetForm({
         ))}
       </div>
 
-      <form action={submit} className="quick-add-form">
+      <form action={submit} className="quick-add-form" noValidate>
         <div className="quick-add-scroll" ref={scrollRef}>
-          {error ? <div className="error wide">{error}</div> : null}
           <div className={`quick-add-fields-shell${fieldsVisible ? " is-visible" : " is-hidden"}`}>
             <div className="quick-add-fields">
               {mode === "problem" ? (
                 <ProblemFields
+                  fieldErrors={fieldErrors}
+                  onClearError={clearFieldError}
                   problem={problem}
                   reviewInitial={reviewInitial}
                   onReviewChange={setReviewSchedule}
@@ -316,15 +387,26 @@ function EntrySheetForm({
               {mode === "application" ? (
                 <ApplicationFields
                   application={application}
+                  fieldErrors={fieldErrors}
+                  onClearError={clearFieldError}
                   resumeRemoved={resumeRemoved}
                   onResumeRemove={() => setResumeRemoved(true)}
                 />
               ) : null}
-              {mode === "project" ? <ProjectFields project={project} /> : null}
-              {mode === "note" ? <NoteFields /> : null}
+              {mode === "project" ? (
+                <ProjectFields fieldErrors={fieldErrors} onClearError={clearFieldError} project={project} />
+              ) : null}
+              {mode === "note" ? (
+                <NoteFields fieldErrors={fieldErrors} onClearError={clearFieldError} />
+              ) : null}
             </div>
           </div>
         </div>
+        {toast ? (
+          <div className="entry-sheet-toast" role="status" aria-live="polite">
+            {toast}
+          </div>
+        ) : null}
         <div className="quick-add-footer">
           <button className="button wide quick-add-submit" disabled={loading} type="submit">
             {modeIcon(mode)}
@@ -339,29 +421,41 @@ function EntrySheetForm({
 function ProblemFields({
   problem,
   reviewInitial,
-  onReviewChange
+  onReviewChange,
+  fieldErrors,
+  onClearError
 }: {
   problem?: import("@/lib/problem-utils").ProblemRow;
   reviewInitial: { preset: ReviewPreset; customDate: string; isCustom: boolean } | null;
   onReviewChange: (value: { reviewPreset?: ReviewPreset; customReviewDate?: string }) => void;
+  fieldErrors: FieldErrors;
+  onClearError: (name: string) => void;
 }) {
   const [confidence, setConfidence] = useState(String(problem?.confidence ?? 3));
 
   return (
     <>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Problem name</span>
-        <input name="name" placeholder="Two Sum" required defaultValue={problem?.name ?? ""} />
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Topic / pattern</span>
+      <QuickAddField error={fieldErrors.name} label="Problem name" name="name" onClearError={onClearError}>
+        <input
+          name="name"
+          placeholder="Two Sum"
+          defaultValue={problem?.name ?? ""}
+          onInput={() => onClearError("name")}
+        />
+      </QuickAddField>
+      <QuickAddField
+        error={fieldErrors.topicPattern}
+        label="Topic / pattern"
+        name="topicPattern"
+        onClearError={onClearError}
+      >
         <input
           name="topicPattern"
           placeholder="Array / Hash map"
-          required
           defaultValue={problem ? topicPatternValue(problem.topic, problem.pattern) : ""}
+          onInput={() => onClearError("topicPattern")}
         />
-      </label>
+      </QuickAddField>
       <div className="quick-add-field-block">
         <span className="quick-add-label">Confidence</span>
         <div className="quick-add-chips">
@@ -378,10 +472,15 @@ function ProblemFields({
         </div>
         <input name="confidence" type="hidden" value={confidence} />
       </div>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Notes</span>
-        <textarea name="notes" placeholder="Key insight, edge cases…" rows={2} defaultValue={problem?.notes ?? ""} />
-      </label>
+      <QuickAddField error={fieldErrors.notes} label="Notes" name="notes" onClearError={onClearError}>
+        <textarea
+          name="notes"
+          placeholder="Key insight, edge cases…"
+          rows={2}
+          defaultValue={problem?.notes ?? ""}
+          onInput={() => onClearError("notes")}
+        />
+      </QuickAddField>
       <QuickAddReviewChips
         onChange={onReviewChange}
         initialPreset={reviewInitial?.preset ?? "oneWeek"}
@@ -395,11 +494,15 @@ function ProblemFields({
 function ApplicationFields({
   application,
   resumeRemoved,
-  onResumeRemove
+  onResumeRemove,
+  fieldErrors,
+  onClearError
 }: {
   application?: import("@prisma/client").Application;
   resumeRemoved: boolean;
   onResumeRemove: () => void;
+  fieldErrors: FieldErrors;
+  onClearError: (name: string) => void;
 }) {
   const [status, setStatus] = useState(application?.status ?? "WISHLIST");
   const showResume = ACTIVE_APPLICATION_STATUSES.has(status);
@@ -407,46 +510,59 @@ function ApplicationFields({
 
   return (
     <>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Company</span>
+      <QuickAddField error={fieldErrors.company} label="Company" name="company" onClearError={onClearError}>
         <input
           name="company"
           placeholder="Stripe"
-          required
           autoComplete="organization"
           defaultValue={application?.company ?? ""}
+          onInput={() => onClearError("company")}
         />
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Role</span>
-        <input name="role" placeholder="Software Engineer" required defaultValue={application?.role ?? ""} />
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Job ID</span>
-        <input name="jobId" placeholder="REQ-23918" defaultValue={application?.jobId ?? ""} />
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Status</span>
-        <select name="status" value={status} onChange={(event) => setStatus(event.target.value)}>
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.role} label="Role" name="role" onClearError={onClearError}>
+        <input
+          name="role"
+          placeholder="Software Engineer"
+          defaultValue={application?.role ?? ""}
+          onInput={() => onClearError("role")}
+        />
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.jobId} label="Job ID" name="jobId" onClearError={onClearError}>
+        <input
+          name="jobId"
+          placeholder="REQ-23918"
+          defaultValue={application?.jobId ?? ""}
+          onInput={() => onClearError("jobId")}
+        />
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.status} label="Status" name="status" onClearError={onClearError}>
+        <select
+          name="status"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            onClearError("status");
+          }}
+        >
           {APPLICATION_STATUSES.map((item) => (
             <option key={item} value={item}>
               {STATUS_LABELS[item]}
             </option>
           ))}
         </select>
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Job URL</span>
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.jobUrl} label="Job URL" name="jobUrl" onClearError={onClearError}>
         <input
           name="jobUrl"
           type="url"
           placeholder="https://…"
           inputMode="url"
           defaultValue={application?.jobUrl ?? ""}
+          onInput={() => onClearError("jobUrl")}
         />
-      </label>
+      </QuickAddField>
       {showResume ? (
-        <div className="quick-add-field">
+        <div className="quick-add-field" data-field="resumeFile">
           <span className="quick-add-label">Resume</span>
           {hasResume && application ? (
             <div className="quick-add-resume-current">
@@ -486,62 +602,123 @@ function ApplicationFields({
           )}
         </div>
       ) : null}
-      <label className="quick-add-field">
-        <span className="quick-add-label">Notes</span>
-        <textarea name="notes" placeholder="Recruiter, comp range…" rows={2} defaultValue={application?.notes ?? ""} />
-      </label>
+      <QuickAddField error={fieldErrors.notes} label="Notes" name="notes" onClearError={onClearError}>
+        <textarea
+          name="notes"
+          placeholder="Recruiter, comp range…"
+          rows={2}
+          defaultValue={application?.notes ?? ""}
+          onInput={() => onClearError("notes")}
+        />
+      </QuickAddField>
     </>
   );
 }
 
-function ProjectFields({ project }: { project?: import("@prisma/client").Project }) {
+function ProjectFields({
+  project,
+  fieldErrors,
+  onClearError
+}: {
+  project?: import("@prisma/client").Project;
+  fieldErrors: FieldErrors;
+  onClearError: (name: string) => void;
+}) {
   return (
     <>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Project name</span>
-        <input name="title" placeholder="Switchboard MVP" required defaultValue={project?.title ?? ""} />
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Status</span>
-        <select name="status" defaultValue={project?.status ?? "ACTIVE"}>
+      <QuickAddField error={fieldErrors.title} label="Project name" name="title" onClearError={onClearError}>
+        <input
+          name="title"
+          placeholder="Switchboard MVP"
+          defaultValue={project?.title ?? ""}
+          onInput={() => onClearError("title")}
+        />
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.status} label="Status" name="status" onClearError={onClearError}>
+        <select
+          name="status"
+          defaultValue={project?.status ?? "ACTIVE"}
+          onChange={() => onClearError("status")}
+        >
           <option value="ACTIVE">Active</option>
           <option value="PAUSED">Paused</option>
           <option value="COMPLETED">Completed</option>
         </select>
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Next step</span>
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.nextStep} label="Next step" name="nextStep" onClearError={onClearError}>
         <input
           name="nextStep"
           placeholder="Ship revision engine"
-          required
           defaultValue={project?.nextStep ?? ""}
+          onInput={() => onClearError("nextStep")}
         />
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Notes</span>
-        <textarea name="notes" placeholder="Scope, constraints…" rows={2} defaultValue={project?.notes ?? ""} />
-      </label>
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.notes} label="Notes" name="notes" onClearError={onClearError}>
+        <textarea
+          name="notes"
+          placeholder="Scope, constraints…"
+          rows={2}
+          defaultValue={project?.notes ?? ""}
+          onInput={() => onClearError("notes")}
+        />
+      </QuickAddField>
     </>
   );
 }
 
-function NoteFields() {
+function NoteFields({
+  fieldErrors,
+  onClearError
+}: {
+  fieldErrors: FieldErrors;
+  onClearError: (name: string) => void;
+}) {
   return (
     <>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Title</span>
-        <input name="title" placeholder="Amazon LP story" required />
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Tag</span>
-        <input name="tag" placeholder="Behavioral" required />
-      </label>
-      <label className="quick-add-field">
-        <span className="quick-add-label">Note</span>
-        <textarea name="body" placeholder="Write it before it evaporates." required rows={3} />
-      </label>
+      <QuickAddField error={fieldErrors.title} label="Title" name="title" onClearError={onClearError}>
+        <input name="title" placeholder="Amazon LP story" onInput={() => onClearError("title")} />
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.tag} label="Tag" name="tag" onClearError={onClearError}>
+        <input name="tag" placeholder="Behavioral" onInput={() => onClearError("tag")} />
+      </QuickAddField>
+      <QuickAddField error={fieldErrors.body} label="Note" name="body" onClearError={onClearError}>
+        <textarea
+          name="body"
+          placeholder="Write it before it evaporates."
+          required={false}
+          rows={3}
+          onInput={() => onClearError("body")}
+        />
+      </QuickAddField>
     </>
+  );
+}
+
+function QuickAddField({
+  name,
+  label,
+  error,
+  onClearError,
+  children,
+  className = "quick-add-field"
+}: {
+  name: string;
+  label: string;
+  error?: string;
+  onClearError: (name: string) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label className={`${className}${error ? " has-error" : ""}`} data-field={name}>
+      <span className="quick-add-label">{label}</span>
+      {children}
+      {error ? (
+        <span className="quick-add-field-error" role="alert">
+          {error}
+        </span>
+      ) : null}
+    </label>
   );
 }
 

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logActivities, logActivity } from "@/lib/activity";
+import { fieldErrorsFromZod, jsonWithFieldErrors } from "@/lib/api-errors";
+import {
+  APPLICATION_DUPLICATE_MESSAGE,
+  applicationDuplicateWhere,
+  normalizeJobId
+} from "@/lib/applications-utils";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { normalizeProblemName } from "@/lib/problem-utils";
@@ -8,9 +14,9 @@ import { resolveNextReviewDate, type ReviewPreset } from "@/lib/review-schedule"
 
 const problemSchema = z.object({
   type: z.literal("problem"),
-  name: z.string().min(2),
-  url: z.string().url().optional().or(z.literal("")),
-  topic: z.string().min(2),
+  name: z.string().min(2, "This field is required."),
+  url: z.string().url("Enter a valid URL.").optional().or(z.literal("")),
+  topic: z.string().min(2, "This field is required."),
   pattern: z.string().optional(),
   confidence: z.coerce.number().min(1).max(5),
   notes: z.string().optional(),
@@ -20,10 +26,10 @@ const problemSchema = z.object({
 
 const applicationSchema = z.object({
   type: z.literal("application"),
-  company: z.string().min(2),
-  role: z.string().min(2),
+  company: z.string().min(2, "This field is required."),
+  role: z.string().min(2, "This field is required."),
   jobId: z.string().optional(),
-  jobUrl: z.string().url().optional().or(z.literal("")),
+  jobUrl: z.string().url("Enter a valid URL.").optional().or(z.literal("")),
   location: z.string().optional(),
   status: z.enum(["WISHLIST", "APPLIED", "OA", "INTERVIEW", "OFFER", "REJECTED"]),
   nextAction: z.string().optional(),
@@ -33,16 +39,16 @@ const applicationSchema = z.object({
 
 const noteSchema = z.object({
   type: z.literal("note"),
-  title: z.string().min(2),
-  tag: z.string().min(2),
-  body: z.string().min(2)
+  title: z.string().min(2, "This field is required."),
+  tag: z.string().min(2, "This field is required."),
+  body: z.string().min(2, "This field is required.")
 });
 
 const projectSchema = z.object({
   type: z.literal("project"),
-  title: z.string().min(2),
+  title: z.string().min(2, "This field is required."),
   status: z.enum(["ACTIVE", "PAUSED", "COMPLETED"]).default("ACTIVE"),
-  nextStep: z.string().min(2),
+  nextStep: z.string().min(2, "This field is required."),
   notes: z.string().optional()
 });
 
@@ -68,7 +74,11 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json());
 
   if (!parsed.success) {
-    return NextResponse.json({ error: "Check the required fields and try again." }, { status: 400 });
+    return jsonWithFieldErrors(
+      "Please correct the highlighted fields.",
+      400,
+      fieldErrorsFromZod(parsed.error)
+    );
   }
 
   const data = parsed.data;
@@ -116,15 +126,15 @@ export async function POST(request: Request) {
   }
 
   if (data.type === "application") {
+    const jobId = normalizeJobId(data.jobId);
     const duplicate = await prisma.application.findFirst({
-      where: { userId: user.id, company: data.company, role: data.role }
+      where: applicationDuplicateWhere(user.id, data.company, data.role, jobId)
     });
 
     if (duplicate) {
-      return NextResponse.json(
-        { error: `An application for ${data.company} · ${data.role} already exists. Update it on the Applications page.` },
-        { status: 409 }
-      );
+      return jsonWithFieldErrors("Application already exists.", 409, {
+        jobId: APPLICATION_DUPLICATE_MESSAGE
+      });
     }
 
     const appliedAt =
@@ -139,7 +149,7 @@ export async function POST(request: Request) {
         userId: user.id,
         company: data.company,
         role: data.role,
-        jobId: data.jobId || null,
+        jobId,
         jobUrl: data.jobUrl || null,
         location: data.location || null,
         status: data.status,

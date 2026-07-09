@@ -45,6 +45,30 @@ export function getStatusCounts(applications: Application[]) {
   ) as Record<ApplicationStatus, number>;
 }
 
+export function normalizeJobId(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed || null;
+}
+
+export function applicationDuplicateWhere(
+  userId: string,
+  company: string,
+  role: string,
+  jobId?: string | null,
+  excludeId?: string
+) {
+  return {
+    userId,
+    company,
+    role,
+    jobId: normalizeJobId(jobId),
+    ...(excludeId ? { NOT: { id: excludeId } } : {})
+  };
+}
+
+export const APPLICATION_DUPLICATE_MESSAGE =
+  "An application with this company, role, and job ID already exists.";
+
 
 
 export type ApplicationStats = {

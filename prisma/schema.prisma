@@ -144,7 +144,7 @@ model Application {
 
 
 
-  @@unique([userId, company, role])
+  @@unique([userId, company, role, jobId])
 
   @@index([userId, status])
 
