@@ -5,49 +5,53 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Project } from "@prisma/client";
 import { EntrySheet } from "@/components/quick-add/EntrySheet";
+import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { formatShortDate } from "@/lib/problem-utils";
+import { usePendingAction } from "@/hooks/usePendingAction";
 
 type ProjectDetailViewProps = {
   project: Project;
 };
 
+type ProjectAction = "pause" | "resume" | "complete" | "delete";
+
 export function ProjectDetailView({ project }: ProjectDetailViewProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { run, isPending, isBusy } = usePendingAction<ProjectAction>();
   const [error, setError] = useState("");
 
   async function runAction(action: "pause" | "resume" | "complete") {
-    setLoading(true);
     setError("");
-    const response = await fetch(`/api/projects/${project.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action })
+    await run(action, async () => {
+      const response = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: "Could not update project." }));
+        setError(body.error);
+        return;
+      }
+      router.refresh();
     });
-    setLoading(false);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({ error: "Could not update project." }));
-      setError(body.error);
-      return;
-    }
-    router.refresh();
   }
 
   async function deleteProject() {
     if (!window.confirm(`Delete ${project.title}?`)) return;
 
-    setLoading(true);
     setError("");
-    const response = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
-    setLoading(false);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({ error: "Could not delete project." }));
-      setError(body.error);
-      return;
-    }
-    router.push("/dashboard/projects");
-    router.refresh();
+    await run("delete", async () => {
+      const response = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: "Could not delete project." }));
+        setError(body.error);
+        return;
+      }
+      router.push("/dashboard/projects");
+      router.refresh();
+    });
   }
 
   return (
@@ -92,26 +96,54 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
           </div>
 
           <div className="detail-actions">
-            <button className="button" disabled={loading} onClick={() => setEditing(true)} type="button">
+            <button className="button" disabled={isBusy} onClick={() => setEditing(true)} type="button">
               Edit Project
             </button>
             {project.status === "ACTIVE" ? (
-              <button className="button secondary" disabled={loading} onClick={() => runAction("pause")} type="button">
-                Pause Project
+              <button
+                className={`button secondary${isPending("pause") ? " is-pending" : ""}`}
+                disabled={isBusy}
+                onClick={() => runAction("pause")}
+                type="button"
+              >
+                <ActionButtonContent pending={isPending("pause")} pendingLabel="Saving…">
+                  Pause Project
+                </ActionButtonContent>
               </button>
             ) : null}
             {project.status === "PAUSED" ? (
-              <button className="button secondary" disabled={loading} onClick={() => runAction("resume")} type="button">
-                Resume Project
+              <button
+                className={`button secondary${isPending("resume") ? " is-pending" : ""}`}
+                disabled={isBusy}
+                onClick={() => runAction("resume")}
+                type="button"
+              >
+                <ActionButtonContent pending={isPending("resume")} pendingLabel="Saving…">
+                  Resume Project
+                </ActionButtonContent>
               </button>
             ) : null}
             {project.status !== "COMPLETED" ? (
-              <button className="button secondary" disabled={loading} onClick={() => runAction("complete")} type="button">
-                Complete Project
+              <button
+                className={`button secondary${isPending("complete") ? " is-pending" : ""}`}
+                disabled={isBusy}
+                onClick={() => runAction("complete")}
+                type="button"
+              >
+                <ActionButtonContent pending={isPending("complete")} pendingLabel="Saving…">
+                  Complete Project
+                </ActionButtonContent>
               </button>
             ) : null}
-            <button className="button danger" disabled={loading} onClick={deleteProject} type="button">
-              Delete Project
+            <button
+              className={`button danger${isPending("delete") ? " is-pending" : ""}`}
+              disabled={isBusy}
+              onClick={deleteProject}
+              type="button"
+            >
+              <ActionButtonContent pending={isPending("delete")} pendingLabel="Deleting…">
+                Delete Project
+              </ActionButtonContent>
             </button>
           </div>
         </div>

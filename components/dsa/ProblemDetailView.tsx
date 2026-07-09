@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EntrySheet } from "@/components/quick-add/EntrySheet";
+import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { CONFIDENCE_LABELS, formatReviewDueLabel, formatShortDate, type ProblemRow } from "@/lib/problem-utils";
+import { usePendingAction } from "@/hooks/usePendingAction";
 
 type ProblemDetailViewProps = {
   problem: ProblemRow;
@@ -13,41 +15,44 @@ type ProblemDetailViewProps = {
 export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { run, isPending, isBusy } = usePendingAction<"delete" | "review">();
   const [error, setError] = useState("");
 
   async function markReviewed() {
-    setLoading(true);
     setError("");
-    const response = await fetch(`/api/problems/${problem.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "revisit" })
+    await run("review", async () => {
+      const response = await fetch(`/api/problems/${problem.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "revisit" })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: "Could not mark reviewed." }));
+        setError(body.error);
+        return;
+      }
+      router.refresh();
     });
-    setLoading(false);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({ error: "Could not mark reviewed." }));
-      setError(body.error);
-      return;
-    }
-    router.refresh();
   }
 
   async function deleteProblem() {
     if (!window.confirm(`Delete ${problem.name}?`)) return;
 
-    setLoading(true);
     setError("");
-    const response = await fetch(`/api/problems/${problem.id}`, { method: "DELETE" });
-    setLoading(false);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({ error: "Could not delete problem." }));
-      setError(body.error);
-      return;
-    }
-    router.push("/dashboard/dsa");
-    router.refresh();
+    await run("delete", async () => {
+      const response = await fetch(`/api/problems/${problem.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: "Could not delete problem." }));
+        setError(body.error);
+        return;
+      }
+      router.push("/dashboard/dsa");
+      router.refresh();
+    });
   }
+
+  const reviewing = isPending("review");
+  const deleting = isPending("delete");
 
   return (
     <>
@@ -117,14 +122,28 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
           </div>
 
           <div className="detail-actions">
-            <button className="button" disabled={loading} onClick={() => setEditing(true)} type="button">
+            <button className="button" disabled={isBusy} onClick={() => setEditing(true)} type="button">
               Edit Problem
             </button>
-            <button className="button secondary" disabled={loading} onClick={markReviewed} type="button">
-              Mark Reviewed
+            <button
+              className={`button secondary${reviewing ? " is-pending" : ""}`}
+              disabled={isBusy}
+              onClick={markReviewed}
+              type="button"
+            >
+              <ActionButtonContent pending={reviewing} pendingLabel="Saving…">
+                Mark Reviewed
+              </ActionButtonContent>
             </button>
-            <button className="button danger" disabled={loading} onClick={deleteProblem} type="button">
-              Delete Problem
+            <button
+              className={`button danger${deleting ? " is-pending" : ""}`}
+              disabled={isBusy}
+              onClick={deleteProblem}
+              type="button"
+            >
+              <ActionButtonContent pending={deleting} pendingLabel="Deleting…">
+                Delete Problem
+              </ActionButtonContent>
             </button>
           </div>
         </div>

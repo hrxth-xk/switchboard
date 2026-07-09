@@ -19,6 +19,8 @@ import { APPLICATION_STATUSES, STATUS_LABELS } from "@/lib/applications-utils";
 import type { FieldErrors } from "@/lib/api-errors";
 import type { ReviewPreset } from "@/lib/review-schedule";
 import { reviewDateFromPreset } from "@/lib/review-schedule";
+import { SavingSpinner } from "@/components/ui/SavingSpinner";
+import { usePendingAction } from "@/hooks/usePendingAction";
 
 const modes: Array<{ id: SheetMode; label: string }> = [
   { id: "problem", label: "DSA" },
@@ -106,6 +108,7 @@ function EntrySheetForm({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { run, isPending } = usePendingAction<"submit">();
   const scrollRef = useRef<HTMLDivElement>(null);
   const isEdit = Boolean(editTarget);
   const problem = editTarget?.type === "problem" ? editTarget.data : undefined;
@@ -117,7 +120,6 @@ function EntrySheetForm({
   const [fieldsVisible, setFieldsVisible] = useState(true);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [toast, setToast] = useState("");
-  const [loading, setLoading] = useState(false);
   const [resumeRemoved, setResumeRemoved] = useState(false);
   const [reviewSchedule, setReviewSchedule] = useState<{ reviewPreset?: ReviewPreset; customReviewDate?: string }>(() =>
     initialReviewSchedule(problem)
@@ -163,68 +165,68 @@ function EntrySheetForm({
   }
 
   async function submit(formData: FormData) {
-    setLoading(true);
-    setFieldErrors({});
-    setToast("");
+    await run("submit", async () => {
+      setFieldErrors({});
+      setToast("");
 
-    const resumeFile = formData.get("resumeFile");
-    const payload: Record<string, string> = Object.fromEntries(
-      [...formData.entries()]
-        .filter(([key, value]) => key !== "resumeFile" && typeof value === "string")
-        .map(([key, value]) => [key, String(value)])
-    );
+      const resumeFile = formData.get("resumeFile");
+      const payload: Record<string, string> = Object.fromEntries(
+        [...formData.entries()]
+          .filter(([key, value]) => key !== "resumeFile" && typeof value === "string")
+          .map(([key, value]) => [key, String(value)])
+      );
 
-    const clientErrors = validateEntryPayload(mode, payload);
-    if (Object.keys(clientErrors).length > 0) {
-      setLoading(false);
-      handleSubmitFailure("Please correct the highlighted fields.", clientErrors);
-      return;
-    }
-
-    if (mode === "problem") {
-      const topicPattern = (payload.topicPattern ?? "").trim();
-      delete payload.topicPattern;
-
-      if (topicPattern.includes("/")) {
-        const [topic, ...rest] = topicPattern.split("/");
-        payload.topic = topic.trim();
-        payload.pattern = rest.join("/").trim();
-      } else {
-        payload.topic = topicPattern;
-        payload.pattern = "";
+      const clientErrors = validateEntryPayload(mode, payload);
+      if (Object.keys(clientErrors).length > 0) {
+        handleSubmitFailure("Please correct the highlighted fields.", clientErrors);
+        return;
       }
 
-      if (reviewSchedule.customReviewDate) {
-        payload.customReviewDate = reviewSchedule.customReviewDate;
-      } else if (reviewSchedule.reviewPreset) {
-        payload.reviewPreset = reviewSchedule.reviewPreset;
-      }
-    }
+      if (mode === "problem") {
+        const topicPattern = (payload.topicPattern ?? "").trim();
+        delete payload.topicPattern;
 
-    try {
-      if (isEdit && editTarget) {
-        await submitEdit(editTarget, mode, payload, resumeFile, resumeRemoved);
-      } else {
-        await submitCreate(mode, payload, resumeFile);
+        if (topicPattern.includes("/")) {
+          const [topic, ...rest] = topicPattern.split("/");
+          payload.topic = topic.trim();
+          payload.pattern = rest.join("/").trim();
+        } else {
+          payload.topic = topicPattern;
+          payload.pattern = "";
+        }
+
+        if (reviewSchedule.customReviewDate) {
+          payload.customReviewDate = reviewSchedule.customReviewDate;
+        } else if (reviewSchedule.reviewPreset) {
+          payload.reviewPreset = reviewSchedule.reviewPreset;
+        }
       }
 
-      onClose();
-      router.refresh();
-    } catch (submitError) {
-      if (submitError instanceof EntrySheetSubmitError) {
-        handleSubmitFailure(
-          submitError.message,
-          submitError.fieldErrors ?? {}
-        );
-      } else {
-        handleSubmitFailure(
-          submitError instanceof Error ? submitError.message : "Unable to save this item."
-        );
+      try {
+        if (isEdit && editTarget) {
+          await submitEdit(editTarget, mode, payload, resumeFile, resumeRemoved);
+        } else {
+          await submitCreate(mode, payload, resumeFile);
+        }
+
+        onClose();
+        router.refresh();
+      } catch (submitError) {
+        if (submitError instanceof EntrySheetSubmitError) {
+          handleSubmitFailure(
+            submitError.message,
+            submitError.fieldErrors ?? {}
+          );
+        } else {
+          handleSubmitFailure(
+            submitError instanceof Error ? submitError.message : "Unable to save this item."
+          );
+        }
       }
-    } finally {
-      setLoading(false);
-    }
+    });
   }
+
+  const saving = isPending("submit");
 
   async function submitCreate(
     createMode: SheetMode,
@@ -408,9 +410,13 @@ function EntrySheetForm({
           </div>
         ) : null}
         <div className="quick-add-footer">
-          <button className="button wide quick-add-submit" disabled={loading} type="submit">
-            {modeIcon(mode)}
-            {loading ? "Saving…" : isEdit ? "Save changes" : "Save"}
+          <button
+            className={`button wide quick-add-submit${saving ? " is-saving" : ""}`}
+            disabled={saving}
+            type="submit"
+          >
+            {saving ? <SavingSpinner /> : modeIcon(mode)}
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
           </button>
         </div>
       </form>

@@ -6,9 +6,11 @@ import { useState } from "react";
 import { Download } from "lucide-react";
 import type { Application } from "@prisma/client";
 import { EntrySheet } from "@/components/quick-add/EntrySheet";
+import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { STATUS_LABELS, applicationStatusTone } from "@/lib/applications-utils";
 import { formatResumeUploadedAt } from "@/lib/resume-utils";
 import { formatShortDate } from "@/lib/problem-utils";
+import { usePendingAction } from "@/hooks/usePendingAction";
 
 type ApplicationDetailViewProps = {
   application: Application;
@@ -17,24 +19,26 @@ type ApplicationDetailViewProps = {
 export function ApplicationDetailView({ application }: ApplicationDetailViewProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { run, isPending, isBusy } = usePendingAction<"delete">();
   const [error, setError] = useState("");
 
   async function deleteApplication() {
     if (!window.confirm(`Delete ${application.company} application?`)) return;
 
-    setLoading(true);
     setError("");
-    const response = await fetch(`/api/applications/${application.id}`, { method: "DELETE" });
-    setLoading(false);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({ error: "Could not delete application." }));
-      setError(body.error);
-      return;
-    }
-    router.push("/dashboard/applications");
-    router.refresh();
+    await run("delete", async () => {
+      const response = await fetch(`/api/applications/${application.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: "Could not delete application." }));
+        setError(body.error);
+        return;
+      }
+      router.push("/dashboard/applications");
+      router.refresh();
+    });
   }
+
+  const deleting = isPending("delete");
 
   return (
     <>
@@ -123,11 +127,18 @@ export function ApplicationDetailView({ application }: ApplicationDetailViewProp
           </div>
 
           <div className="detail-actions">
-            <button className="button" disabled={loading} onClick={() => setEditing(true)} type="button">
+            <button className="button" disabled={isBusy} onClick={() => setEditing(true)} type="button">
               Edit Application
             </button>
-            <button className="button danger" disabled={loading} onClick={deleteApplication} type="button">
-              Delete Application
+            <button
+              className={`button danger${deleting ? " is-pending" : ""}`}
+              disabled={isBusy}
+              onClick={deleteApplication}
+              type="button"
+            >
+              <ActionButtonContent pending={deleting} pendingLabel="Deleting…">
+                Delete Application
+              </ActionButtonContent>
             </button>
           </div>
         </div>

@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { DEFAULT_GOALS } from "@/lib/goals";
+import { usePendingAction } from "@/hooks/usePendingAction";
 
 type GoalSetupModalProps = {
   onComplete: () => void;
@@ -23,7 +25,7 @@ export function GoalSetupModal({
   mode = "create"
 }: GoalSetupModalProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const { run, isPending } = usePendingAction<"save">();
   const [error, setError] = useState("");
   const [dailyDsaGoal, setDailyDsaGoal] = useState(initial?.dailyDsaGoal ?? DEFAULT_GOALS.dailyDsaGoal);
   const [dailyApplicationsGoal, setDailyApplicationsGoal] = useState(
@@ -35,27 +37,28 @@ export function GoalSetupModal({
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    setLoading(true);
     setError("");
 
-    const payload = { dailyDsaGoal, dailyApplicationsGoal, dailyProjectSessionsGoal };
-    const response = await fetch("/api/goals", {
-      method: mode === "create" ? "POST" : "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+    await run("save", async () => {
+      const payload = { dailyDsaGoal, dailyApplicationsGoal, dailyProjectSessionsGoal };
+      const response = await fetch("/api/goals", {
+        method: mode === "create" ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: "Could not save goals." }));
+        setError(body.error ?? "Could not save goals.");
+        return;
+      }
+
+      router.refresh();
+      onComplete();
     });
-
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({ error: "Could not save goals." }));
-      setError(body.error ?? "Could not save goals.");
-      setLoading(false);
-      return;
-    }
-
-    router.refresh();
-    onComplete();
-    setLoading(false);
   }
+
+  const saving = isPending("save");
 
   return (
     <div className="modal-overlay" role="presentation">
@@ -117,8 +120,14 @@ export function GoalSetupModal({
 
           {error ? <p className="field-error">{error}</p> : null}
 
-          <button className="button" type="submit" disabled={loading}>
-            {loading ? "Saving…" : mode === "create" ? "Save goals" : "Update goals"}
+          <button
+            className={`button${saving ? " is-saving" : ""}`}
+            type="submit"
+            disabled={saving}
+          >
+            <ActionButtonContent pending={saving} pendingLabel="Saving…">
+              {mode === "create" ? "Save goals" : "Update goals"}
+            </ActionButtonContent>
           </button>
         </form>
       </div>
