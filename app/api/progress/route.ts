@@ -12,6 +12,7 @@ import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
 import { normalizeProblemName } from "@/lib/problem-utils";
 import { resolveNextReviewDate, type ReviewPreset } from "@/lib/review-schedule";
+import { getRequestTimeZone } from "@/lib/timezone";
 
 const problemSchema = z.object({
   type: z.literal("problem"),
@@ -58,7 +59,8 @@ const schema = z.discriminatedUnion("type", [problemSchema, applicationSchema, n
 function problemNextReview(
   data: z.infer<typeof problemSchema>,
   confidence: number,
-  now: Date
+  now: Date,
+  timeZone: string
 ) {
   return resolveNextReviewDate(
     {
@@ -66,12 +68,14 @@ function problemNextReview(
       customDate: data.customReviewDate,
       confidence: data.reviewPreset || data.customReviewDate ? undefined : confidence
     },
-    now
+    now,
+    timeZone
   );
 }
 
 export async function POST(request: Request) {
   const user = await requireUser();
+  const timeZone = getRequestTimeZone();
   const parsed = schema.safeParse(await request.json());
 
   if (!parsed.success) {
@@ -88,7 +92,7 @@ export async function POST(request: Request) {
   if (data.type === "problem") {
     const name = normalizeProblemName(data.name);
     const existing = await prisma.problem.findFirst({ where: { userId: user.id, name } });
-    const nextReview = problemNextReview(data, data.confidence, now);
+    const nextReview = problemNextReview(data, data.confidence, now, timeZone);
 
     if (existing) {
       await prisma.problem.update({

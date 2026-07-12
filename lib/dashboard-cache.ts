@@ -1,16 +1,18 @@
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { buildMacroDashboard } from "@/lib/macro-dashboard";
-import { calendarDateKey } from "@/lib/period-utils";
+import { calendarDayKey } from "@/lib/period-utils";
+import { getRequestTimeZone } from "@/lib/timezone";
 
 export function dashboardCacheTag(userId: string) {
   return `dashboard-${userId}`;
 }
 
 export function getCachedMacroDashboard(userId: string) {
-  const dayKey = calendarDateKey();
+  const timeZone = getRequestTimeZone();
+  const dayKey = calendarDayKey(new Date(), timeZone);
   return unstable_cache(
-    () => buildMacroDashboard(userId, new Date()),
-    ["macro-dashboard", userId, dayKey],
+    () => buildMacroDashboard(userId, new Date(), timeZone),
+    ["macro-dashboard", userId, dayKey, timeZone],
     {
       revalidate: 60,
       tags: [dashboardCacheTag(userId), `dashboard-day-${dayKey}`]

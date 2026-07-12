@@ -2,7 +2,17 @@ import type { ActionCardMetrics } from "@/lib/action-dashboard";
 import { buildActionCards } from "@/lib/action-dashboard";
 import type { UserGoalsData } from "@/lib/goals";
 import { DEFAULT_GOALS } from "@/lib/goals";
-import { endOfDay, endOfMonth, endOfWeek, startOfDay, startOfMonth, startOfWeek } from "@/lib/period-utils";
+import {
+  calendarDayKey,
+  compareCalendarDays,
+  detectTimeZone,
+  endOfDay,
+  endOfMonth,
+  endOfWeek,
+  startOfDay,
+  startOfMonth,
+  startOfWeek
+} from "@/lib/period-utils";
 import { buildDashboardProgress, type DashboardProgress } from "@/lib/progress-metrics";
 import { buildMonthlyActivityTrend, type MonthlyActivityTrend } from "@/lib/monthly-activity-trend";
 import { buildWeeklyBreakdown, type WeeklyDayBreakdown } from "@/lib/weekly-breakdown";
@@ -22,7 +32,11 @@ function trendWindowStart(now: Date) {
   return start;
 }
 
-export async function buildMacroDashboard(userId: string, now = new Date()): Promise<MacroDashboardData> {
+export async function buildMacroDashboard(
+  userId: string,
+  now = new Date(),
+  timeZone: string = detectTimeZone()
+): Promise<MacroDashboardData> {
   const monthStart = startOfMonth(now);
   const dayStart = startOfDay(now);
   const dayEnd = endOfDay(now);
@@ -30,14 +44,16 @@ export async function buildMacroDashboard(userId: string, now = new Date()): Pro
   const weekEnd = endOfWeek(now);
   const monthEnd = endOfMonth(now);
   const trendStart = trendWindowStart(now);
+  const activitySince = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+  const todayKey = calendarDayKey(now, timeZone);
 
   const [
     goals,
-    todayActivities,
+    recentActivities,
     trendProblems,
     trendApplications,
     trendProjects,
-    reviewDue,
+    reviewCandidates,
     activeApplications,
     activeProjects,
     dailyDsa,
@@ -52,7 +68,7 @@ export async function buildMacroDashboard(userId: string, now = new Date()): Pro
   ] = await Promise.all([
     prisma.userGoals.findUnique({ where: { userId } }),
     prisma.activity.findMany({
-      where: { userId, createdAt: { gte: dayStart, lte: dayEnd } },
+      where: { userId, createdAt: { gte: activitySince } },
       select: { label: true, createdAt: true },
       orderBy: { createdAt: "desc" }
     }),
@@ -68,8 +84,9 @@ export async function buildMacroDashboard(userId: string, now = new Date()): Pro
       where: { userId, updatedAt: { gte: trendStart } },
       select: { updatedAt: true }
     }),
-    prisma.problem.count({
-      where: { userId, nextReview: { not: null, lte: dayEnd } }
+    prisma.problem.findMany({
+      where: { userId, nextReview: { not: null } },
+      select: { nextReview: true }
     }),
     prisma.application.count({
       where: { userId, status: { in: ["APPLIED", "OA", "INTERVIEW"] } }
@@ -93,6 +110,13 @@ export async function buildMacroDashboard(userId: string, now = new Date()): Pro
     prisma.project.count({ where: { userId, updatedAt: { gte: weekStart, lte: weekEnd } } }),
     prisma.project.count({ where: { userId, updatedAt: { gte: monthStart, lte: monthEnd } } })
   ]);
+
+  const todayActivities = recentActivities.filter(
+    (activity) => calendarDayKey(activity.createdAt, timeZone) === todayKey
+  );
+  const reviewDue = reviewCandidates.filter(
+    (problem) => problem.nextReview && compareCalendarDays(problem.nextReview, now, timeZone) <= 0
+  ).length;
 
   const goalsData = goals ?? null;
   const effectiveGoals = goalsData ?? DEFAULT_GOALS;

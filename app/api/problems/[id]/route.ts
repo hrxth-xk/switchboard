@@ -6,6 +6,7 @@ import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
 import { normalizeProblemName } from "@/lib/problem-utils";
 import { resolveNextReviewDate, type ReviewPreset } from "@/lib/review-schedule";
+import { getRequestTimeZone } from "@/lib/timezone";
 
 const updateSchema = z.object({
   name: z.string().min(2).optional(),
@@ -38,6 +39,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const body = parsed.data;
   const now = new Date();
+  const timeZone = getRequestTimeZone();
   const confidence = body.confidence ?? problem.confidence;
   const isRevisit = body.action === "revisit";
 
@@ -51,7 +53,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         customDate: body.customReviewDate,
         confidence: body.reviewPreset || body.customReviewDate ? undefined : confidence
       },
-      now
+      now,
+      timeZone
     );
   }
 

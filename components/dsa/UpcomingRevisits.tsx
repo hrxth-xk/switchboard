@@ -3,16 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { formatReviewDueLabel, type ProblemRow } from "@/lib/problem-utils";
-
-export type ReviewsDueGroup = {
-  key: "overdue" | "today" | "tomorrow" | "later" | string;
-  label: string;
-  problems: ProblemRow[];
-};
+import { detectTimeZone } from "@/lib/period-utils";
+import { formatReviewDueLabel, getReviewsDue, type ProblemRow } from "@/lib/problem-utils";
 
 type ReviewsDueProps = {
-  groups: ReviewsDueGroup[];
+  problems: ProblemRow[];
 };
 
 type ReviewEntry = {
@@ -21,34 +16,31 @@ type ReviewEntry = {
   dateLabel: string;
 };
 
-function urgencyFromGroupKey(key: string): ReviewEntry["urgency"] {
-  if (key === "overdue" || key === "today" || key === "tomorrow" || key === "later") {
-    return key;
-  }
-  return "later";
-}
-
-export function ReviewsDue({ groups }: ReviewsDueProps) {
+export function ReviewsDue({ problems }: ReviewsDueProps) {
   const [open, setOpen] = useState(false);
+  const timeZone = detectTimeZone();
 
   const { dueCount, entries } = useMemo(() => {
+    const now = new Date();
+    const groups = getReviewsDue(problems, now, timeZone);
     const next: ReviewEntry[] = [];
     let due = 0;
 
     for (const group of groups) {
-      const urgency = urgencyFromGroupKey(group.key);
       for (const problem of group.problems) {
-        if (urgency === "overdue" || urgency === "today") due += 1;
+        if (group.key === "overdue" || group.key === "today") due += 1;
         next.push({
           problem,
-          urgency,
-          dateLabel: problem.nextReview ? formatReviewDueLabel(problem.nextReview) : group.label
+          urgency: group.key,
+          dateLabel: problem.nextReview
+            ? formatReviewDueLabel(problem.nextReview, now, timeZone)
+            : group.label
         });
       }
     }
 
     return { dueCount: due, entries: next };
-  }, [groups]);
+  }, [problems, timeZone]);
 
   const hasScheduled = entries.length > 0;
 
