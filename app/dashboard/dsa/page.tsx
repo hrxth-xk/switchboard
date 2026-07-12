@@ -3,20 +3,13 @@ import { TrackedProblems } from "@/components/dsa/TrackedProblems";
 import { ReviewsDue } from "@/components/dsa/UpcomingRevisits";
 import { requireUser } from "@/lib/auth";
 import { DEFAULT_GOALS } from "@/lib/goals";
-import {
-  getAllProblemsSorted,
-  getDsaTodayProgress,
-  getReviewsDue,
-  serializeProblem
-} from "@/lib/problem-utils";
-import { endOfDay, startOfDay } from "@/lib/period-utils";
+import { getAllProblemsSorted, serializeProblem } from "@/lib/problem-utils";
 import { prisma } from "@/lib/db";
 
 export default async function DsaPage() {
   const user = await requireUser();
-  const now = new Date();
-  const dayStart = startOfDay(now);
-  const dayEnd = endOfDay(now);
+  // Wide enough window that client TZ filtering still sees "today" activities
+  const activitySince = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
   const [problems, goals, activities] = await Promise.all([
     prisma.problem.findMany({
@@ -25,19 +18,18 @@ export default async function DsaPage() {
     }),
     prisma.userGoals.findUnique({ where: { userId: user.id } }),
     prisma.activity.findMany({
-      where: { userId: user.id, createdAt: { gte: dayStart, lte: dayEnd } },
+      where: { userId: user.id, createdAt: { gte: activitySince } },
       select: { label: true, createdAt: true }
     })
   ]);
 
   const dailyGoal = goals?.dailyDsaGoal ?? DEFAULT_GOALS.dailyDsaGoal;
-  const todayProgress = getDsaTodayProgress(problems, activities, dailyGoal, now);
-  const reviewGroups = getReviewsDue(problems, now).map((group) => ({
-    key: group.key,
-    label: group.label,
-    problems: group.problems.map(serializeProblem)
-  }));
+  const serializedProblems = problems.map(serializeProblem);
   const tracked = getAllProblemsSorted(problems).map(serializeProblem);
+  const activityRows = activities.map((activity) => ({
+    label: activity.label,
+    createdAt: activity.createdAt.toISOString()
+  }));
 
   return (
     <div className="workspace-page">
@@ -46,8 +38,12 @@ export default async function DsaPage() {
         <p className="page-kicker">Stay consistent. Spaced repetition wins.</p>
       </header>
 
-      <DsaTodayProgressSection progress={todayProgress} />
-      <ReviewsDue groups={reviewGroups} />
+      <DsaTodayProgressSection
+        activities={activityRows}
+        dailyGoal={dailyGoal}
+        problems={serializedProblems}
+      />
+      <ReviewsDue problems={serializedProblems} />
       <TrackedProblems problems={tracked} />
     </div>
   );

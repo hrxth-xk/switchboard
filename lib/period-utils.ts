@@ -10,27 +10,80 @@ export function endOfDay(date: Date) {
   return next;
 }
 
-/** Local calendar YYYY-MM-DD — use for day-boundary cache keys and comparisons. */
-export function calendarDateKey(date: Date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+export const TIMEZONE_COOKIE = "sb_tz";
+
+/** Best-effort IANA timezone for the current JS runtime. */
+export function detectTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+/**
+ * Calendar YYYY-MM-DD in a specific IANA timezone.
+ * Prefer this over startOfDay() for due-date logic across server/client.
+ */
+export function calendarDayKey(date: Date = new Date(), timeZone: string = detectTimeZone()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
   return `${year}-${month}-${day}`;
 }
 
-/** Parse an HTML date input value as a local calendar day (avoids UTC midnight shift). */
+/** @deprecated Prefer calendarDayKey — kept for day-boundary refresh helpers. */
+export function calendarDateKey(date: Date = new Date()) {
+  return calendarDayKey(date);
+}
+
+/** Parse an HTML date input value as a stable UTC-noon civil date. */
 export function parseLocalDateOnly(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (!match) return endOfDay(new Date(value));
+  if (!match) {
+    const fallback = new Date(value);
+    return civilDateToUtcNoon(calendarDayKey(fallback));
+  }
+  return civilDateToUtcNoon(`${match[1]}-${match[2]}-${match[3]}`);
+}
+
+/** Store civil calendar days at UTC noon so most timezones share the same day key. */
+export function civilDateToUtcNoon(dayKey: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!match) return new Date(dayKey);
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  return endOfDay(new Date(year, month - 1, day));
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+}
+
+export function addCalendarDays(from: Date, days: number, timeZone: string = detectTimeZone()) {
+  const [year, month, day] = calendarDayKey(from, timeZone).split("-").map(Number);
+  const civil = new Date(Date.UTC(year, month - 1, day));
+  civil.setUTCDate(civil.getUTCDate() + days);
+  return civilDateToUtcNoon(
+    `${civil.getUTCFullYear()}-${String(civil.getUTCMonth() + 1).padStart(2, "0")}-${String(civil.getUTCDate()).padStart(2, "0")}`
+  );
 }
 
 /** Negative if a is before b's calendar day, 0 if same day, positive if after. */
-export function compareCalendarDays(a: Date, b: Date) {
-  return startOfDay(a).getTime() - startOfDay(b).getTime();
+export function compareCalendarDays(a: Date, b: Date, timeZone: string = detectTimeZone()) {
+  return calendarDayKey(a, timeZone).localeCompare(calendarDayKey(b, timeZone));
+}
+
+export function diffCalendarDays(a: Date, b: Date, timeZone: string = detectTimeZone()) {
+  const [ay, am, ad] = calendarDayKey(a, timeZone).split("-").map(Number);
+  const [by, bm, bd] = calendarDayKey(b, timeZone).split("-").map(Number);
+  const aUtc = Date.UTC(ay, am - 1, ad);
+  const bUtc = Date.UTC(by, bm - 1, bd);
+  return Math.round((aUtc - bUtc) / (24 * 60 * 60 * 1000));
 }
 
 export function startOfWeek(date: Date) {

@@ -1,5 +1,10 @@
 import type { Problem } from "@prisma/client";
-import { compareCalendarDays, endOfDay as periodEndOfDay, isWithinRange, startOfDay } from "@/lib/period-utils";
+import {
+  calendarDayKey,
+  compareCalendarDays,
+  detectTimeZone,
+  diffCalendarDays
+} from "@/lib/period-utils";
 
 export type ProblemRow = {
   id: string;
@@ -14,6 +19,11 @@ export type ProblemRow = {
   revisitCount: number;
 };
 
+type ReviewableProblem = {
+  nextReview: Date | string | null;
+  name?: string;
+};
+
 export const CONFIDENCE_LABELS: Record<number, string> = {
   5: "Solved alone quickly",
   4: "Solved alone slowly",
@@ -21,6 +31,10 @@ export const CONFIDENCE_LABELS: Record<number, string> = {
   2: "Needed major hints",
   1: "Watched solution"
 };
+
+function asDate(value: Date | string) {
+  return typeof value === "string" ? new Date(value) : value;
+}
 
 export function serializeProblem(problem: Problem): ProblemRow {
   return {
@@ -41,24 +55,34 @@ export function normalizeProblemName(name: string) {
   return name.trim();
 }
 
-/** Review is due if its calendar day is today or earlier (overdue carries forward). */
-export function isReviewDue(problem: Problem, now = new Date()) {
+/** Review is due if its calendar day is today or earlier in the given timezone. */
+export function isReviewDue(
+  problem: ReviewableProblem,
+  now = new Date(),
+  timeZone: string = detectTimeZone()
+) {
   if (!problem.nextReview) return false;
-  return compareCalendarDays(problem.nextReview, now) <= 0;
+  return compareCalendarDays(asDate(problem.nextReview), now, timeZone) <= 0;
 }
 
-export function getReviewQueue(problems: Problem[], now = new Date()) {
+export function getReviewQueue<T extends ReviewableProblem>(
+  problems: T[],
+  now = new Date(),
+  timeZone: string = detectTimeZone()
+) {
   return problems
-    .filter((problem) => isReviewDue(problem, now))
-    .sort((left, right) => left.nextReview!.getTime() - right.nextReview!.getTime());
+    .filter((problem) => isReviewDue(problem, now, timeZone))
+    .sort(
+      (left, right) => asDate(left.nextReview!).getTime() - asDate(right.nextReview!).getTime()
+    );
 }
 
-export function getProblemStats(problems: Problem[], now = new Date()) {
+export function getProblemStats(problems: Problem[], now = new Date(), timeZone: string = detectTimeZone()) {
   const patterns = new Set(problems.map((problem) => problem.pattern).filter(Boolean));
 
   return {
     total: problems.length,
-    reviewDue: getReviewQueue(problems, now).length,
+    reviewDue: getReviewQueue(problems, now, timeZone).length,
     avgConfidence: problems.length
       ? Math.round((problems.reduce((sum, problem) => sum + problem.confidence, 0) / problems.length) * 10) / 10
       : 0,
@@ -70,41 +94,53 @@ export function getAllProblemsSorted(problems: Problem[]) {
   return [...problems].sort((left, right) => right.lastPracticed.getTime() - left.lastPracticed.getTime());
 }
 
-export function formatShortDate(value: string | Date) {
-  const date = typeof value === "string" ? new Date(value) : value;
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
+export function formatShortDate(value: string | Date, timeZone: string = detectTimeZone()) {
+  const date = asDate(value);
+  return new Intl.DateTimeFormat("en", {
+    timeZone,
+    month: "short",
+    day: "numeric"
+  }).format(date);
 }
 
-export function formatReviewDueLabel(value: string | Date, now = new Date()) {
-  const date = typeof value === "string" ? new Date(value) : value;
-  const diffDays = Math.round(
-    (startOfDay(date).getTime() - startOfDay(now).getTime()) / (24 * 60 * 60 * 1000)
-  );
+export function formatReviewDueLabel(
+  value: string | Date,
+  now = new Date(),
+  timeZone: string = detectTimeZone()
+) {
+  const date = asDate(value);
+  const diffDays = diffCalendarDays(date, now, timeZone);
 
-  if (diffDays < 0) return formatShortDate(date);
+  if (diffDays < 0) return formatShortDate(date, timeZone);
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Tomorrow";
-  return formatShortDate(date);
+  return formatShortDate(date, timeZone);
 }
 
 export type ReviewDueGroupKey = "overdue" | "today" | "tomorrow" | "later";
 
-export type ReviewDueGroup = {
+export type ReviewDueGroup<T extends ReviewableProblem = Problem> = {
   key: ReviewDueGroupKey;
   label: string;
-  problems: Problem[];
+  problems: T[];
 };
 
 /**
  * All scheduled reviews ordered by urgency: overdue → today → tomorrow → future.
  * Overdue items keep appearing until completed.
  */
-export function getReviewsDue(problems: Problem[], now = new Date()): ReviewDueGroup[] {
+export function getReviewsDue<T extends ReviewableProblem>(
+  problems: T[],
+  now = new Date(),
+  timeZone: string = detectTimeZone()
+): ReviewDueGroup<T>[] {
   const scheduled = problems
     .filter((problem) => problem.nextReview)
-    .sort((left, right) => left.nextReview!.getTime() - right.nextReview!.getTime());
+    .sort(
+      (left, right) => asDate(left.nextReview!).getTime() - asDate(right.nextReview!).getTime()
+    );
 
-  const buckets: Record<ReviewDueGroupKey, Problem[]> = {
+  const buckets: Record<ReviewDueGroupKey, T[]> = {
     overdue: [],
     today: [],
     tomorrow: [],
@@ -112,9 +148,7 @@ export function getReviewsDue(problems: Problem[], now = new Date()): ReviewDueG
   };
 
   for (const problem of scheduled) {
-    const diffDays = Math.round(
-      (startOfDay(problem.nextReview!).getTime() - startOfDay(now).getTime()) / (24 * 60 * 60 * 1000)
-    );
+    const diffDays = diffCalendarDays(asDate(problem.nextReview!), now, timeZone);
 
     if (diffDays < 0) buckets.overdue.push(problem);
     else if (diffDays === 0) buckets.today.push(problem);
@@ -122,7 +156,7 @@ export function getReviewsDue(problems: Problem[], now = new Date()): ReviewDueG
     else buckets.later.push(problem);
   }
 
-  const groups: ReviewDueGroup[] = [];
+  const groups: ReviewDueGroup<T>[] = [];
 
   if (buckets.overdue.length) {
     groups.push({ key: "overdue", label: "Overdue", problems: buckets.overdue });
@@ -135,7 +169,7 @@ export function getReviewsDue(problems: Problem[], now = new Date()): ReviewDueG
   }
 
   for (const problem of buckets.later) {
-    const label = formatShortDate(problem.nextReview!).toUpperCase();
+    const label = formatShortDate(problem.nextReview!, timeZone).toUpperCase();
     const existing = groups.find((group) => group.key === "later" && group.label === label);
     if (existing) {
       existing.problems.push(problem);
@@ -148,8 +182,8 @@ export function getReviewsDue(problems: Problem[], now = new Date()): ReviewDueG
 }
 
 /** @deprecated Use getReviewsDue — kept for any remaining imports. */
-export function getUpcomingRevisits(problems: Problem[], now = new Date()) {
-  return getReviewsDue(problems, now).flatMap((group) => group.problems);
+export function getUpcomingRevisits(problems: Problem[], now = new Date(), timeZone?: string) {
+  return getReviewsDue(problems, now, timeZone).flatMap((group) => group.problems);
 }
 
 export type DsaTodayProgress = {
@@ -160,39 +194,37 @@ export type DsaTodayProgress = {
 };
 
 export function getDsaTodayProgress(
-  problems: Problem[],
-  activities: { label: string; createdAt: Date }[],
+  problems: Array<ReviewableProblem & { name: string }>,
+  activities: { label: string; createdAt: Date | string }[],
   dailyGoal: number,
-  now = new Date()
+  now = new Date(),
+  timeZone: string = detectTimeZone()
 ): DsaTodayProgress {
-  const dayStart = startOfDay(now);
-  const dayEnd = periodEndOfDay(now);
+  const todayKey = calendarDayKey(now, timeZone);
   const problemNames = new Set(problems.map((problem) => problem.name));
 
-  const solvedToday = activities.filter(
-    (activity) =>
-      activity.label.startsWith("Solved ") &&
-      isWithinRange(activity.createdAt, dayStart, dayEnd) &&
-      problemNames.has(activity.label.slice("Solved ".length))
-  ).length;
+  const solvedToday = activities.filter((activity) => {
+    if (!activity.label.startsWith("Solved ")) return false;
+    if (!problemNames.has(activity.label.slice("Solved ".length))) return false;
+    return calendarDayKey(asDate(activity.createdAt), timeZone) === todayKey;
+  }).length;
 
-  const revisitsCompletedToday = activities.filter(
-    (activity) =>
-      activity.label.startsWith("Revisited ") &&
-      isWithinRange(activity.createdAt, dayStart, dayEnd) &&
-      problemNames.has(activity.label.slice("Revisited ".length))
-  ).length;
+  const revisitsCompletedToday = activities.filter((activity) => {
+    if (!activity.label.startsWith("Revisited ")) return false;
+    if (!problemNames.has(activity.label.slice("Revisited ".length))) return false;
+    return calendarDayKey(asDate(activity.createdAt), timeZone) === todayKey;
+  }).length;
 
   return {
     solvedToday,
     solvedGoal: dailyGoal,
     revisitsCompletedToday,
-    revisitsDueToday: getReviewQueue(problems, now).length
+    revisitsDueToday: getReviewQueue(problems, now, timeZone).length
   };
 }
 
-export function problemNextAction(problem: Problem, now = new Date()) {
-  if (isReviewDue(problem, now)) {
+export function problemNextAction(problem: Problem, now = new Date(), timeZone?: string) {
+  if (isReviewDue(problem, now, timeZone)) {
     return `Review ${problem.name}`;
   }
 

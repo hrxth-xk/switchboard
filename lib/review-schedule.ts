@@ -1,4 +1,9 @@
-import { endOfDay as periodEndOfDay, parseLocalDateOnly } from "@/lib/period-utils";
+import {
+  addCalendarDays,
+  civilDateToUtcNoon,
+  calendarDayKey,
+  parseLocalDateOnly
+} from "@/lib/period-utils";
 
 export const REVIEW_PRESETS = {
   tomorrow: 1,
@@ -26,43 +31,42 @@ const CONFIDENCE_DAYS: Record<number, number> = {
   5: 30
 };
 
+/** @deprecated Prefer addCalendarDays — kept for any remaining imports. */
 export function endOfDay(date: Date) {
-  return periodEndOfDay(date);
+  return civilDateToUtcNoon(calendarDayKey(date));
 }
 
-export function addDays(from: Date, days: number) {
-  const date = new Date(from);
-  date.setDate(date.getDate() + days);
-  return endOfDay(date);
+export function addDays(from: Date, days: number, timeZone?: string) {
+  return addCalendarDays(from, days, timeZone);
 }
 
-export function calculateNextReview(confidence: number, from = new Date()) {
+export function calculateNextReview(confidence: number, from = new Date(), timeZone?: string) {
   const days = CONFIDENCE_DAYS[confidence] ?? CONFIDENCE_DAYS[3];
-  return addDays(from, days);
+  return addDays(from, days, timeZone);
 }
 
-export function reviewDateFromPreset(preset: ReviewPreset, from = new Date()) {
-  return addDays(from, REVIEW_PRESETS[preset]);
+export function reviewDateFromPreset(preset: ReviewPreset, from = new Date(), timeZone?: string) {
+  return addDays(from, REVIEW_PRESETS[preset], timeZone);
 }
 
 export function resolveNextReviewDate(
   options: { preset?: ReviewPreset; customDate?: string | Date; confidence?: number },
-  from = new Date()
+  from = new Date(),
+  timeZone?: string
 ) {
   if (options.customDate) {
     return typeof options.customDate === "string"
       ? parseLocalDateOnly(options.customDate)
-      : endOfDay(options.customDate);
+      : civilDateToUtcNoon(calendarDayKey(options.customDate, timeZone));
   }
 
   if (options.preset) {
-    return reviewDateFromPreset(options.preset, from);
+    return reviewDateFromPreset(options.preset, from, timeZone);
   }
 
   if (options.confidence) {
-    return calculateNextReview(options.confidence, from);
+    return calculateNextReview(options.confidence, from, timeZone);
   }
 
-  return calculateNextReview(3, from);
+  return calculateNextReview(3, from, timeZone);
 }
-
