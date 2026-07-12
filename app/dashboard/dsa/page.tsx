@@ -1,21 +1,22 @@
 import { DsaTodayProgressSection } from "@/components/dsa/DsaTodayProgress";
 import { TrackedProblems } from "@/components/dsa/TrackedProblems";
-import { UpcomingRevisits } from "@/components/dsa/UpcomingRevisits";
+import { ReviewsDue } from "@/components/dsa/UpcomingRevisits";
 import { requireUser } from "@/lib/auth";
 import { DEFAULT_GOALS } from "@/lib/goals";
 import {
   getAllProblemsSorted,
   getDsaTodayProgress,
-  getUpcomingRevisits,
+  getReviewsDue,
   serializeProblem
 } from "@/lib/problem-utils";
-import { startOfDay } from "@/lib/period-utils";
+import { endOfDay, startOfDay } from "@/lib/period-utils";
 import { prisma } from "@/lib/db";
 
 export default async function DsaPage() {
   const user = await requireUser();
   const now = new Date();
   const dayStart = startOfDay(now);
+  const dayEnd = endOfDay(now);
 
   const [problems, goals, activities] = await Promise.all([
     prisma.problem.findMany({
@@ -24,14 +25,18 @@ export default async function DsaPage() {
     }),
     prisma.userGoals.findUnique({ where: { userId: user.id } }),
     prisma.activity.findMany({
-      where: { userId: user.id, createdAt: { gte: dayStart } },
+      where: { userId: user.id, createdAt: { gte: dayStart, lte: dayEnd } },
       select: { label: true, createdAt: true }
     })
   ]);
 
   const dailyGoal = goals?.dailyDsaGoal ?? DEFAULT_GOALS.dailyDsaGoal;
   const todayProgress = getDsaTodayProgress(problems, activities, dailyGoal, now);
-  const upcoming = getUpcomingRevisits(problems, now).map(serializeProblem);
+  const reviewGroups = getReviewsDue(problems, now).map((group) => ({
+    key: group.key,
+    label: group.label,
+    problems: group.problems.map(serializeProblem)
+  }));
   const tracked = getAllProblemsSorted(problems).map(serializeProblem);
 
   return (
@@ -42,7 +47,7 @@ export default async function DsaPage() {
       </header>
 
       <DsaTodayProgressSection progress={todayProgress} />
-      <UpcomingRevisits problems={upcoming} />
+      <ReviewsDue groups={reviewGroups} />
       <TrackedProblems problems={tracked} />
     </div>
   );

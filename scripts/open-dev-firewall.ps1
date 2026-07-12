@@ -5,16 +5,15 @@
 
 $ruleName = "Switchboard Next.js Dev"
 
-$existing = netsh advfirewall firewall show rule name="$ruleName" 2>$null
-if ($LASTEXITCODE -eq 0) {
-  Write-Host "Firewall rule '$ruleName' already exists."
-  exit 0
-}
+# Remove any older rule so profile/port settings stay correct
+netsh advfirewall firewall delete rule name="$ruleName" | Out-Null
 
-netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=3000 profile=private
+# Many home Wi‑Fi networks are classified as Public in Windows.
+# Allow inbound TCP 3000 on Private and Public so LAN devices can connect.
+netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=3000 profile=private,public
 if ($LASTEXITCODE -eq 0) {
-  Write-Host "Added firewall rule for TCP port 3000 (Private networks)."
-  Write-Host "Restart npm run dev, then open the Phone URL shown in the terminal."
+  Write-Host "Added firewall rule for TCP port 3000 (Private + Public networks)."
+  Write-Host "On your phone open: http://$((Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like '192.168.*' } | Select-Object -First 1).IPAddress):3000"
 } else {
   Write-Host "Failed. Re-run PowerShell as Administrator."
   exit 1

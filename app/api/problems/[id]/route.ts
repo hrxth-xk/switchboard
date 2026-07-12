@@ -95,6 +95,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   await prisma.problem.delete({ where: { id } });
+  await logActivity(user.id, `Deleted DSA problem - ${problem.name}`);
   revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }
