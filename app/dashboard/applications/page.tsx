@@ -13,7 +13,7 @@ export default async function ApplicationsPage({ searchParams }: ApplicationsPag
 
   const applications = await prisma.application.findMany({
     where: { userId: user.id },
-    orderBy: [{ status: "asc" }, { company: "asc" }]
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
   });
 
   const initialTab = tab ? statusFromSlug(tab) ?? "APPLIED" : "APPLIED";

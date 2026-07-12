@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EntrySheet } from "@/components/quick-add/EntrySheet";
+import { MarkReviewedSheet } from "@/components/dsa/MarkReviewedSheet";
 import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { CONFIDENCE_LABELS, formatReviewDueLabel, formatShortDate, type ProblemRow } from "@/lib/problem-utils";
+import type { ReviewPreset } from "@/lib/review-schedule";
 import { usePendingAction } from "@/hooks/usePendingAction";
 
 type ProblemDetailViewProps = {
@@ -15,22 +17,31 @@ type ProblemDetailViewProps = {
 export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const { run, isPending, isBusy } = usePendingAction<"delete" | "review">();
   const [error, setError] = useState("");
 
-  async function markReviewed() {
+  async function confirmReviewed(schedule: { reviewPreset?: ReviewPreset; customReviewDate?: string }) {
     setError("");
     await run("review", async () => {
       const response = await fetch(`/api/problems/${problem.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "revisit" })
+        body: JSON.stringify({
+          action: "revisit",
+          ...(schedule.customReviewDate
+            ? { customReviewDate: schedule.customReviewDate }
+            : schedule.reviewPreset
+              ? { reviewPreset: schedule.reviewPreset }
+              : {})
+        })
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({ error: "Could not mark reviewed." }));
         setError(body.error);
         return;
       }
+      setScheduleOpen(false);
       router.refresh();
     });
   }
@@ -65,7 +76,7 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
         </header>
 
         <div className="detail-panel">
-          {error ? <div className="error wide">{error}</div> : null}
+          {error && !scheduleOpen ? <div className="error wide">{error}</div> : null}
 
           <dl className="detail-grid">
             <div>
@@ -126,14 +137,15 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
               Edit Problem
             </button>
             <button
-              className={`button secondary${reviewing ? " is-pending" : ""}`}
+              className="button secondary"
               disabled={isBusy}
-              onClick={markReviewed}
+              onClick={() => {
+                setError("");
+                setScheduleOpen(true);
+              }}
               type="button"
             >
-              <ActionButtonContent pending={reviewing} pendingLabel="Saving…">
-                Mark Reviewed
-              </ActionButtonContent>
+              Mark Reviewed
             </button>
             <button
               className={`button danger${deleting ? " is-pending" : ""}`}
@@ -148,6 +160,16 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
           </div>
         </div>
       </div>
+
+      <MarkReviewedSheet
+        error={scheduleOpen ? error : ""}
+        onClose={() => {
+          if (!reviewing) setScheduleOpen(false);
+        }}
+        onConfirm={confirmReviewed}
+        open={scheduleOpen}
+        pending={reviewing}
+      />
 
       <EntrySheet
         editTarget={editing ? { type: "problem", data: problem } : null}

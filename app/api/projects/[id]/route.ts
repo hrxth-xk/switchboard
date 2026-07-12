@@ -64,6 +64,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   await prisma.project.delete({ where: { id } });
+  await logActivity(user.id, `Deleted project - ${project.title}`);
   revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }

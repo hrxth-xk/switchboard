@@ -110,6 +110,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   await prisma.application.delete({ where: { id } });
+  await logActivity(user.id, `Deleted application - ${application.company}`);
   revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });
 }

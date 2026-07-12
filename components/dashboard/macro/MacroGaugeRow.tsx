@@ -1,7 +1,5 @@
 "use client";
 
-import { SemiCircleGauge } from "@/components/dashboard/macro/SemiCircleGauge";
-
 type MacroGaugeRowProps = {
   remaining: number;
   completed: number;
@@ -9,19 +7,79 @@ type MacroGaugeRowProps = {
   percent: number;
 };
 
+function polar(cx: number, cy: number, radius: number, angleDeg: number) {
+  const radians = ((angleDeg - 90) * Math.PI) / 180;
+  return {
+    x: cx + radius * Math.cos(radians),
+    y: cy + radius * Math.sin(radians)
+  };
+}
+
+function arcPath(cx: number, cy: number, radius: number, startDeg: number, endDeg: number) {
+  const start = polar(cx, cy, radius, startDeg);
+  const end = polar(cx, cy, radius, endDeg);
+  const sweep = (endDeg - startDeg + 360) % 360;
+  const largeArc = sweep > 180 ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`;
+}
+
 export function MacroGaugeRow({ remaining, completed, target, percent }: MacroGaugeRowProps) {
+  const clamped = Math.min(Math.max(percent, 0), 100);
+  const cx = 120;
+  const cy = 120;
+  const radius = 86;
+  const stroke = 5;
+  // Horseshoe open at the bottom — matches the reference ring
+  const startDeg = 220;
+  const endDeg = 140;
+  const sweepDeg = (endDeg - startDeg + 360) % 360;
+  const length = (2 * Math.PI * radius * sweepDeg) / 360;
+  const offset = length - (clamped / 100) * length;
+  const path = arcPath(cx, cy, radius, startDeg, endDeg);
+
   return (
     <div className="macro-gauge-row">
-      <div className="macro-gauge-side">
-        <span className="macro-gauge-side-value">{remaining}</span>
-        <span className="macro-gauge-side-label">Remaining</span>
-      </div>
+      <div className="macro-gauge-stage">
+        <svg
+          aria-hidden="true"
+          className="macro-gauge-svg"
+          viewBox="0 0 240 240"
+        >
+          <path
+            d={path}
+            fill="none"
+            stroke="var(--line)"
+            strokeLinecap="round"
+            strokeWidth={stroke}
+          />
+          <path
+            className="macro-gauge-fill"
+            d={path}
+            fill="none"
+            stroke="var(--text)"
+            strokeLinecap="round"
+            strokeWidth={stroke}
+            strokeDasharray={length}
+            strokeDashoffset={offset}
+          />
+        </svg>
 
-      <SemiCircleGauge percent={percent} completed={completed} />
+        <div className="macro-gauge-metrics">
+          <div className="macro-gauge-metric">
+            <span className="macro-gauge-metric-value">{remaining}</span>
+            <span className="macro-gauge-metric-label">Remaining</span>
+          </div>
 
-      <div className="macro-gauge-side macro-gauge-side-right">
-        <span className="macro-gauge-side-value">{target}</span>
-        <span className="macro-gauge-side-label">Target</span>
+          <div className="macro-gauge-metric macro-gauge-metric-center">
+            <span className="macro-gauge-metric-value macro-gauge-metric-value-center">{completed}</span>
+            <span className="macro-gauge-metric-label">Completed</span>
+          </div>
+
+          <div className="macro-gauge-metric">
+            <span className="macro-gauge-metric-value">{target}</span>
+            <span className="macro-gauge-metric-label">Target</span>
+          </div>
+        </div>
       </div>
     </div>
   );
