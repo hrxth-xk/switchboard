@@ -18,7 +18,7 @@ export function GoalsEditor({ goals }: GoalsEditorProps) {
         <button className="button" type="button" onClick={() => setEditing(true)}>
           Set goals
         </button>
-        {editing ? <GoalSetupModal mode="create" onComplete={() => setEditing(false)} /> : null}
+        <GoalSetupModal open={editing} mode="create" onComplete={() => setEditing(false)} />
       </div>
     );
   }
@@ -44,14 +44,13 @@ export function GoalsEditor({ goals }: GoalsEditorProps) {
         Edit goals
       </button>
 
-      {editing ? (
-        <GoalSetupModal
-          mode="edit"
-          initial={goals}
-          onComplete={() => setEditing(false)}
-          onClose={() => setEditing(false)}
-        />
-      ) : null}
+      <GoalSetupModal
+        open={editing}
+        mode="edit"
+        initial={goals}
+        onComplete={() => setEditing(false)}
+        onClose={() => setEditing(false)}
+      />
     </div>
   );
 }

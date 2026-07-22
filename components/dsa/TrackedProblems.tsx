@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { CONFIDENCE_LABELS, formatReviewDueLabel, formatShortDate, type ProblemRow } from "@/lib/problem-utils";
+import { Braces } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { StaggerList } from "@/components/ui/StaggerList";
+import { EntrySheet } from "@/components/quick-add/EntrySheet";
+import { formatConfidence, formatReviewDueLabel, formatShortDate, type ProblemRow } from "@/lib/problem-utils";
 
 const PAGE_SIZE = 12;
 
@@ -13,6 +17,7 @@ type TrackedProblemsProps = {
 export function TrackedProblems({ problems }: TrackedProblemsProps) {
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const value = query.trim().toLowerCase();
@@ -48,42 +53,50 @@ export function TrackedProblems({ problems }: TrackedProblemsProps) {
       </header>
 
       {visible.length ? (
-        <ul className="entity-card-list">
-          {visible.map((problem) => (
-            <li key={problem.id}>
-              <Link className="entity-card" href={`/dashboard/dsa/${problem.id}`} prefetch={false}>
-                <div className="entity-card-top">
-                  <p className="entity-card-title">{problem.name}</p>
-                  <span className="entity-card-badge scan-topic">{problem.topic}</span>
+        <StaggerList
+          className="entity-card-list"
+          getKey={(problem) => problem.id}
+          items={visible}
+          renderItem={(problem) => (
+            <Link className="entity-card" href={`/dashboard/dsa/${problem.id}`} prefetch={false}>
+              <div className="entity-card-top">
+                <p className="entity-card-title">{problem.name}</p>
+                <span className="entity-card-badge scan-topic">{problem.topic}</span>
+              </div>
+              <p className="entity-card-line scan-pattern">{problem.pattern ?? "No pattern set"}</p>
+              <p className="entity-card-line">{formatConfidence(problem.confidence)}</p>
+              <div className="entity-card-grid">
+                <div>
+                  <p className="entity-card-label">Last Practiced</p>
+                  <p className="entity-card-value">{formatShortDate(problem.lastPracticed)}</p>
                 </div>
-                <p className="entity-card-line scan-pattern">{problem.pattern ?? "No pattern set"}</p>
-                <p className="entity-card-line">
-                  Confidence {problem.confidence}/5 · {CONFIDENCE_LABELS[problem.confidence]}
-                </p>
-                <div className="entity-card-grid">
-                  <div>
-                    <p className="entity-card-label">Last Practiced</p>
-                    <p className="entity-card-value">{formatShortDate(problem.lastPracticed)}</p>
-                  </div>
-                  <div>
-                    <p className="entity-card-label">Next Review</p>
-                    <p className="entity-card-value scan-review">
-                      {problem.nextReview ? formatReviewDueLabel(problem.nextReview) : "—"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="entity-card-label">Revisions</p>
-                    <p className="entity-card-value">{problem.revisitCount}</p>
-                  </div>
+                <div>
+                  <p className="entity-card-label">Next Review</p>
+                  <p className="entity-card-value scan-review">
+                    {problem.nextReview ? formatReviewDueLabel(problem.nextReview) : "—"}
+                  </p>
                 </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                <div>
+                  <p className="entity-card-label">Revisions</p>
+                  <p className="entity-card-value">{problem.revisitCount}</p>
+                </div>
+              </div>
+            </Link>
+          )}
+        />
+      ) : problems.length ? (
+        <p className="empty-inline workspace-empty">No problems match that search.</p>
       ) : (
-        <p className="empty-inline workspace-empty">
-          {problems.length ? "No problems match that search." : "Log your first problem with Quick Add."}
-        </p>
+        <EmptyState
+          action={
+            <button className="button" onClick={() => setQuickAddOpen(true)} type="button">
+              Log a problem
+            </button>
+          }
+          description="Track problems you've solved, rate your confidence, and Switchboard will schedule spaced-repetition reviews."
+          icon={Braces}
+          title="No problems logged yet"
+        />
       )}
 
       {hasMore ? (
@@ -95,6 +108,8 @@ export function TrackedProblems({ problems }: TrackedProblemsProps) {
           Load more
         </button>
       ) : null}
+
+      <EntrySheet initialMode="problem" onClose={() => setQuickAddOpen(false)} open={quickAddOpen} />
     </section>
   );
 }

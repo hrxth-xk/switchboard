@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import type { PeriodCounts } from "@/lib/progress-metrics";
 import { METRIC_HREFS, METRIC_LABELS, type MetricKey } from "@/lib/progress-metrics";
 
@@ -27,7 +28,7 @@ export function MacroTrackerRow({ counts, targets }: MacroTrackerRowProps) {
               <div className={`macro-tracker-fill tone-${fillTone}`} style={{ width: `${fill}%` }} />
             </div>
             <span className="macro-tracker-count">
-              {done} / {target}
+              <AnimatedNumber value={done} /> / <AnimatedNumber value={target} />
             </span>
           </Link>
         );

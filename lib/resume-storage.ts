@@ -5,6 +5,13 @@ export const RESUME_BUCKET = "resumes";
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".doc", ".docx"]);
 
+/** Library path: {userId}/library/{resumeVersionId}/resume{ext} */
+export function resumeLibraryObjectPath(userId: string, resumeVersionId: string, fileName: string) {
+  const extension = resumeFileExtension(fileName) || ".pdf";
+  return `${userId}/library/${resumeVersionId}/resume${extension}`;
+}
+
+/** @deprecated Legacy per-application path — kept for reading migrated files. */
 export function resumeObjectPath(userId: string, applicationId: string, fileName: string) {
   const extension = resumeFileExtension(fileName) || ".pdf";
   return `${userId}/${applicationId}/resume${extension}`;
@@ -31,11 +38,10 @@ export function validateResumeFile(file: File) {
   return null;
 }
 
-export async function saveResumeFile(userId: string, applicationId: string, file: File) {
+export async function uploadResumeToPath(storagePath: string, file: File) {
   const error = validateResumeFile(file);
   if (error) throw new Error(error);
 
-  const storagePath = resumeObjectPath(userId, applicationId, file.name);
   const buffer = Buffer.from(await file.arrayBuffer());
   const supabase = getSupabaseAdmin();
 
@@ -47,6 +53,12 @@ export async function saveResumeFile(userId: string, applicationId: string, file
   if (uploadError) {
     throw new Error(uploadError.message || "Could not upload resume.");
   }
+}
+
+/** @deprecated Prefer uploadResumeToPath + ResumeVersion. Kept for transitional callers. */
+export async function saveResumeFile(userId: string, applicationId: string, file: File) {
+  const storagePath = resumeObjectPath(userId, applicationId, file.name);
+  await uploadResumeToPath(storagePath, file);
 
   return {
     resumeFileName: file.name,
@@ -74,7 +86,6 @@ export async function deleteResumeFile(storagePath: string | null | undefined) {
   const { error } = await supabase.storage.from(RESUME_BUCKET).remove([storagePath]);
 
   if (error) {
-    // File may already be gone.
     console.warn(`Could not delete resume at ${storagePath}:`, error.message);
   }
 }

@@ -70,3 +70,34 @@ export function resolveNextReviewDate(
 
   return calculateNextReview(3, from, timeZone);
 }
+
+/** Human label for toast copy, e.g. "Jul 29, 2026". */
+export function formatRevisitScheduleLabel(value: string | Date, timeZone?: string) {
+  const date =
+    typeof value === "string" ? parseLocalDateOnly(value) : civilDateToUtcNoon(calendarDayKey(value, timeZone));
+  return new Intl.DateTimeFormat("en", {
+    timeZone: timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(date);
+}
+
+/**
+ * Append next-revisit copy when the user picked a schedule themselves
+ * (custom date and/or explicit preset — not auto/confidence-only).
+ */
+export function withNextRevisitToast(
+  base: string,
+  schedule: { customReviewDate?: string; reviewPreset?: ReviewPreset }
+) {
+  if (schedule.customReviewDate) {
+    return `${base} · Next revisit scheduled for ${formatRevisitScheduleLabel(schedule.customReviewDate)}`;
+  }
+  if (schedule.reviewPreset) {
+    return `${base} · Next revisit scheduled for ${formatRevisitScheduleLabel(
+      reviewDateFromPreset(schedule.reviewPreset)
+    )}`;
+  }
+  return base;
+}

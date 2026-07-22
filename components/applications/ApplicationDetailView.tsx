@@ -3,27 +3,38 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Download } from "lucide-react";
-import type { Application } from "@prisma/client";
+import { Download, ExternalLink } from "lucide-react";
+import type { Application, ResumeVersion } from "@prisma/client";
 import { EntrySheet } from "@/components/quick-add/EntrySheet";
 import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { STATUS_LABELS, applicationStatusTone } from "@/lib/applications-utils";
+import { resumeVersionLabel } from "@/lib/resume-library";
 import { formatResumeUploadedAt } from "@/lib/resume-utils";
 import { formatShortDate } from "@/lib/problem-utils";
+import { toastSuccess } from "@/lib/toast";
+import { useConfirm } from "@/hooks/useConfirm";
 import { usePendingAction } from "@/hooks/usePendingAction";
 
 type ApplicationDetailViewProps = {
-  application: Application;
+  application: Application & {
+    resumeVersion: Pick<ResumeVersion, "id" | "name" | "version" | "originalFileName" | "createdAt"> | null;
+  };
 };
 
 export function ApplicationDetailView({ application }: ApplicationDetailViewProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const { run, isPending, isBusy } = usePendingAction<"delete">();
+  const { confirm, confirmDialog } = useConfirm();
   const [error, setError] = useState("");
 
   async function deleteApplication() {
-    if (!window.confirm(`Delete ${application.company} application?`)) return;
+    const confirmed = await confirm({
+      title: `Delete ${application.company} application?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete"
+    });
+    if (!confirmed) return;
 
     setError("");
     await run("delete", async () => {
@@ -33,12 +44,14 @@ export function ApplicationDetailView({ application }: ApplicationDetailViewProp
         setError(body.error);
         return;
       }
+      toastSuccess("Deleted");
       router.push("/dashboard/applications");
       router.refresh();
     });
   }
 
   const deleting = isPending("delete");
+  const resume = application.resumeVersion;
 
   return (
     <>
@@ -52,7 +65,11 @@ export function ApplicationDetailView({ application }: ApplicationDetailViewProp
         </header>
 
         <div className="detail-panel">
-          {error ? <div className="error wide">{error}</div> : null}
+          {error ? (
+            <div className="error wide" role="alert">
+              {error}
+            </div>
+          ) : null}
 
           <dl className="detail-grid">
             <div>
@@ -107,22 +124,33 @@ export function ApplicationDetailView({ application }: ApplicationDetailViewProp
 
           <div className="detail-resume">
             <p className="detail-notes-label">Resume</p>
-            {application.resumeFileName ? (
+            {resume ? (
               <div className="detail-resume-card">
                 <div>
-                  <p className="detail-resume-title">Resume Attached</p>
-                  <p className="detail-resume-file">{application.resumeFileName}</p>
-                  {application.resumeUploadedAt ? (
-                    <p className="detail-resume-meta">Uploaded {formatResumeUploadedAt(application.resumeUploadedAt)}</p>
+                  <p className="detail-resume-title">{resumeVersionLabel(resume)}</p>
+                  <p className="detail-resume-file">{resume.originalFileName}</p>
+                  {resume.createdAt ? (
+                    <p className="detail-resume-meta">Uploaded {formatResumeUploadedAt(resume.createdAt)}</p>
                   ) : null}
                 </div>
-                <a className="button secondary compact" href={`/api/applications/${application.id}/resume`}>
-                  <Download size={16} />
-                  Download Resume
-                </a>
+                <div className="detail-resume-actions">
+                  <a className="button secondary compact" href={`/api/resumes/${resume.id}/download`}>
+                    <Download size={16} />
+                    Download
+                  </a>
+                  <a
+                    className="button secondary compact"
+                    href={`/api/resumes/${resume.id}/download`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink size={16} />
+                    Open
+                  </a>
+                </div>
               </div>
             ) : (
-              <p className="detail-notes-body">No resume attached.</p>
+              <p className="detail-notes-body">No resume linked.</p>
             )}
           </div>
 
@@ -149,6 +177,8 @@ export function ApplicationDetailView({ application }: ApplicationDetailViewProp
         open={editing}
         onClose={() => setEditing(false)}
       />
+
+      {confirmDialog}
     </>
   );
 }

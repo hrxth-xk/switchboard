@@ -149,12 +149,11 @@ export function MacroDashboard({ data }: MacroDashboardProps) {
         <ActionCardsGrid cards={data.actionCards} />
       </div>
 
-      {showGoalsModal ? (
-        <GoalSetupModal
-          onComplete={() => setShowGoalsModal(false)}
-          onClose={data.goals ? () => setShowGoalsModal(false) : undefined}
-        />
-      ) : null}
+      <GoalSetupModal
+        open={showGoalsModal}
+        onComplete={() => setShowGoalsModal(false)}
+        onClose={data.goals ? () => setShowGoalsModal(false) : undefined}
+      />
     </>
   );
 }

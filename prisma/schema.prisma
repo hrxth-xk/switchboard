@@ -1,224 +1,132 @@
 generator client {
-
   provider = "prisma-client-js"
-
 }
-
-
 
 datasource db {
-
   provider  = "postgresql"
-
   url       = env("DATABASE_URL")
-
   directUrl = env("DIRECT_URL")
-
 }
-
-
 
 model User {
-
-  id           String        @id @default(cuid())
-
-  name         String
-
-  email        String        @unique
-
-  passwordHash String
-
-  role         String        @default("USER")
-
-  createdAt    DateTime      @default(now())
-
-  updatedAt    DateTime      @updatedAt
-
-  problems     Problem[]
-
-  applications Application[]
-
-  notes        Note[]
-
-  projects     Project[]
-
-  activities   Activity[]
-
-  goals        UserGoals?
-
+  id             String          @id @default(cuid())
+  name           String
+  email          String          @unique
+  passwordHash   String
+  role           String          @default("USER")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  problems       Problem[]
+  applications   Application[]
+  notes          Note[]
+  projects       Project[]
+  activities     Activity[]
+  goals          UserGoals?
+  resumeVersions ResumeVersion[]
 }
-
-
 
 model UserGoals {
-
   userId                   String   @id
-
   dailyDsaGoal             Int      @default(3)
-
   dailyApplicationsGoal    Int      @default(2)
-
   dailyProjectSessionsGoal Int      @default(1)
-
   updatedAt                DateTime @updatedAt
-
   user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
 }
-
-
 
 model Problem {
-
   id            String    @id @default(cuid())
-
   userId        String
-
   name          String
-
   url           String?
-
+  slug          String?
   topic         String
-
   pattern       String?
-
-  confidence    Int       @default(3)
-
+  difficulty    String?
+  confidence    Int?
   notes         String?
-
   lastPracticed DateTime  @default(now())
-
   nextReview    DateTime?
-
   revisitCount  Int       @default(1)
-
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-
-
   @@unique([userId, name])
-
   @@index([userId, nextReview])
-
   @@index([userId, topic])
-
+  @@index([userId, slug])
 }
 
+model ResumeVersion {
+  id               String        @id @default(cuid())
+  userId           String
+  name             String
+  version          Int           @default(1)
+  storagePath      String
+  originalFileName String
+  archived         Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications     Application[]
 
+  @@index([userId, archived])
+  @@index([userId, name])
+}
 
 model Application {
-
-  id         String    @id @default(cuid())
-
-  userId     String
-
-  company    String
-
-  role       String
-
-  jobId      String?
-
-  jobUrl     String?
-
-  location   String?
-
-  status     String    @default("WISHLIST")
-
-  resumeFileName   String?
-
-  resumeStoragePath String?
-
-  resumeFileSize   Int?
-
-  resumeUploadedAt DateTime?
-
-  nextAction String?
-
-  notes      String?
-
-  appliedAt  DateTime?
-
-  createdAt  DateTime  @default(now())
-
-  updatedAt  DateTime  @updatedAt
-
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-
+  id              String         @id @default(cuid())
+  userId          String
+  company         String
+  role            String
+  jobId           String?
+  jobUrl          String?
+  location        String?
+  status          String         @default("WISHLIST")
+  resumeVersionId String?
+  nextAction      String?
+  notes           String?
+  appliedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeVersion   ResumeVersion? @relation(fields: [resumeVersionId], references: [id], onDelete: SetNull)
 
   @@unique([userId, company, role, jobId])
-
   @@index([userId, status])
-
   @@index([userId, createdAt])
+  @@index([resumeVersionId])
 }
-
-
 
 model Note {
-
   id        String   @id @default(cuid())
-
   userId    String
-
   title     String
-
   body      String
-
   tag       String
-
   createdAt DateTime @default(now())
-
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
 }
-
-
 
 model Project {
-
   id        String   @id @default(cuid())
-
   userId    String
-
   title     String
-
   status    String   @default("ACTIVE")
-
   nextStep  String?
-
   notes     String?
-
   createdAt DateTime @default(now())
-
   updatedAt DateTime @updatedAt
-
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-
 
   @@index([userId, status])
-
 }
-
-
 
 model Activity {
-
   id        String   @id @default(cuid())
-
   userId    String
-
   label     String
-
   createdAt DateTime @default(now())
-
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-
-
   @@index([userId, createdAt])
-
 }
-
-

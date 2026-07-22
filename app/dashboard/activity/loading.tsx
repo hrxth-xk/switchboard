@@ -1,5 +1,5 @@
-import { DashboardPageLoading } from "@/components/dashboard/DashboardPageLoading";
+import { ListPageLoading } from "@/components/dashboard/ListPageLoading";
 
 export default function ActivityLoading() {
-  return <DashboardPageLoading />;
+  return <ListPageLoading />;
 }

@@ -20,7 +20,8 @@ const updateSchema = z.object({
   status: z.enum(["WISHLIST", "APPLIED", "OA", "INTERVIEW", "OFFER", "REJECTED"]).optional(),
   nextAction: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
-  appliedAt: z.string().optional().or(z.literal(""))
+  appliedAt: z.string().optional().or(z.literal("")),
+  resumeVersionId: z.string().nullable().optional()
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -71,8 +72,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     appliedAt = new Date(body.appliedAt);
   } else if (body.appliedAt === "") {
     appliedAt = null;
-  } else if (status !== "WISHLIST" && !appliedAt && status !== application.status) {
+  } else   if (status !== "WISHLIST" && !appliedAt && status !== application.status) {
     appliedAt = now;
+  }
+
+  let resumeVersionId = application.resumeVersionId;
+  if (body.resumeVersionId !== undefined) {
+    if (body.resumeVersionId === null || body.resumeVersionId === "") {
+      resumeVersionId = null;
+    } else {
+      const resume = await prisma.resumeVersion.findFirst({
+        where: { id: body.resumeVersionId, userId: user.id }
+      });
+      if (!resume) {
+        return jsonWithFieldErrors("Selected resume was not found.", 400, {
+          resumeVersionId: "Choose a resume from your library."
+        });
+      }
+      resumeVersionId = resume.id;
+    }
   }
 
   await prisma.application.update({
@@ -86,7 +104,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       status,
       nextAction: body.nextAction === "" ? null : body.nextAction ?? application.nextAction,
       notes: body.notes === "" ? null : body.notes ?? application.notes,
-      appliedAt
+      appliedAt,
+      resumeVersionId
     }
   });
 

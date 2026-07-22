@@ -6,8 +6,11 @@ import { useState } from "react";
 import { EntrySheet } from "@/components/quick-add/EntrySheet";
 import { MarkReviewedSheet } from "@/components/dsa/MarkReviewedSheet";
 import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
-import { CONFIDENCE_LABELS, formatReviewDueLabel, formatShortDate, type ProblemRow } from "@/lib/problem-utils";
+import { formatConfidence, formatReviewDueLabel, formatShortDate, type ProblemRow } from "@/lib/problem-utils";
 import type { ReviewPreset } from "@/lib/review-schedule";
+import { withNextRevisitToast } from "@/lib/review-schedule";
+import { toastSuccess } from "@/lib/toast";
+import { useConfirm } from "@/hooks/useConfirm";
 import { usePendingAction } from "@/hooks/usePendingAction";
 
 type ProblemDetailViewProps = {
@@ -19,6 +22,7 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
   const [editing, setEditing] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const { run, isPending, isBusy } = usePendingAction<"delete" | "review">();
+  const { confirm, confirmDialog } = useConfirm();
   const [error, setError] = useState("");
 
   async function confirmReviewed(schedule: { reviewPreset?: ReviewPreset; customReviewDate?: string }) {
@@ -42,12 +46,18 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
         return;
       }
       setScheduleOpen(false);
+      toastSuccess(withNextRevisitToast("Problem reviewed", schedule));
       router.refresh();
     });
   }
 
   async function deleteProblem() {
-    if (!window.confirm(`Delete ${problem.name}?`)) return;
+    const confirmed = await confirm({
+      title: `Delete ${problem.name}?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete"
+    });
+    if (!confirmed) return;
 
     setError("");
     await run("delete", async () => {
@@ -57,6 +67,7 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
         setError(body.error);
         return;
       }
+      toastSuccess("Deleted");
       router.push("/dashboard/dsa");
       router.refresh();
     });
@@ -76,12 +87,18 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
         </header>
 
         <div className="detail-panel">
-          {error && !scheduleOpen ? <div className="error wide">{error}</div> : null}
+          {error && !scheduleOpen ? <div className="error wide" role="alert">{error}</div> : null}
 
           <dl className="detail-grid">
             <div>
               <dt>Platform</dt>
-              <dd>{problem.url ? "Link available" : "Not linked"}</dd>
+              <dd>
+                {problem.slug || problem.url?.includes("leetcode.com")
+                  ? "LeetCode"
+                  : problem.url
+                    ? "Link available"
+                    : "Not linked"}
+              </dd>
             </div>
             <div>
               <dt>Problem Link</dt>
@@ -105,13 +122,11 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
             </div>
             <div>
               <dt>Difficulty</dt>
-              <dd>—</dd>
+              <dd>{problem.difficulty ?? "—"}</dd>
             </div>
             <div>
               <dt>Confidence</dt>
-              <dd>
-                {problem.confidence}/5 · {CONFIDENCE_LABELS[problem.confidence]}
-              </dd>
+              <dd>{formatConfidence(problem.confidence)}</dd>
             </div>
             <div>
               <dt>Last Practiced</dt>
@@ -176,6 +191,9 @@ export function ProblemDetailView({ problem }: ProblemDetailViewProps) {
         open={editing}
         onClose={() => setEditing(false)}
       />
+
+      {confirmDialog}
     </>
   );
 }
+

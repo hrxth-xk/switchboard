@@ -10,7 +10,11 @@ export function BottomNav() {
   const onProfile =
     pathname === "/dashboard/more" ||
     pathname === "/dashboard/goals" ||
-    pathname === "/dashboard/admin";
+    pathname === "/dashboard/admin" ||
+    pathname === "/dashboard/import" ||
+    pathname.startsWith("/dashboard/import/") ||
+    pathname === "/dashboard/resumes" ||
+    pathname.startsWith("/dashboard/resumes/");
 
   return (
     <nav className="bottom-nav" aria-label="Mobile navigation">

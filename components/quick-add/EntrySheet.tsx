@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { BriefcaseBusiness, Download, FolderKanban, NotebookPen, Plus, X } from "lucide-react";
+import { BriefcaseBusiness, FolderKanban, NotebookPen, Plus, X } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
+import { ResumeVersionSelectLoader } from "@/components/resumes/ResumeVersionSelect";
 import { QuickAddReviewChips } from "@/components/quick-add/QuickAddReviewChips";
 import {
   EntrySheetSubmitError,
@@ -17,10 +19,14 @@ import {
 } from "@/components/quick-add/entry-sheet-types";
 import { APPLICATION_STATUSES, STATUS_LABELS } from "@/lib/applications-utils";
 import type { FieldErrors } from "@/lib/api-errors";
+import type { JobImportResult } from "@/lib/job-import/types";
 import type { ReviewPreset } from "@/lib/review-schedule";
-import { reviewDateFromPreset } from "@/lib/review-schedule";
+import { reviewDateFromPreset, withNextRevisitToast } from "@/lib/review-schedule";
 import { SavingSpinner } from "@/components/ui/SavingSpinner";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { usePendingAction } from "@/hooks/usePendingAction";
+
+const JOB_IMPORT_FALLBACK = "We couldn't extract the job details. Please fill them manually.";
 
 const modes: Array<{ id: SheetMode; label: string }> = [
   { id: "problem", label: "DSA" },
@@ -37,74 +43,64 @@ const CONFIDENCE_OPTIONS = [
   { value: "1", label: "1" }
 ];
 
-const ACTIVE_APPLICATION_STATUSES = new Set(["APPLIED", "OA", "INTERVIEW", "OFFER", "REJECTED"]);
+const CREATE_SUCCESS_MESSAGE: Record<SheetMode, string> = {
+  problem: "Problem logged",
+  application: "Application added",
+  project: "Project added",
+  note: "Note saved"
+};
+
+const EDIT_SUCCESS_MESSAGE: Record<SheetMode, string> = {
+  problem: "Problem updated",
+  application: "Application updated",
+  project: "Project updated",
+  note: "Note updated"
+};
 
 type EntrySheetProps = {
   open: boolean;
   onClose: () => void;
   editTarget?: EditTarget | null;
+  initialMode?: SheetMode;
 };
 
-export function EntrySheet({ open, onClose, editTarget }: EntrySheetProps) {
+export function EntrySheet({ open, onClose, editTarget, initialMode }: EntrySheetProps) {
   const isEdit = Boolean(editTarget);
 
-  useEffect(() => {
-    if (!open) return;
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
-
-    return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div className="modal-overlay" role="presentation" onClick={onClose}>
-      <div
-        className="modal quick-add-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="entry-sheet-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="quick-add-head">
-          <div className="modal-header">
-            <h2 className="panel-title" id="entry-sheet-title">
-              {isEdit ? "Edit" : "Quick add"}
-            </h2>
-            <button
-              className="icon-button secondary modal-close"
-              type="button"
-              aria-label="Close"
-              onClick={onClose}
-            >
-              <X size={18} />
-            </button>
-          </div>
+    <Modal open={open} onClose={onClose} className="quick-add-modal" labelledBy="entry-sheet-title">
+      <div className="quick-add-head">
+        <div className="modal-header">
+          <h2 className="panel-title" id="entry-sheet-title">
+            {isEdit ? "Edit" : "Quick add"}
+          </h2>
+          <button
+            className="icon-button secondary modal-close"
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <EntrySheetForm
-          key={editTarget ? `${editTarget.type}-${editTarget.data.id}` : "create"}
-          editTarget={editTarget}
-          onClose={onClose}
-        />
       </div>
-    </div>
+      <EntrySheetForm
+        key={editTarget ? `${editTarget.type}-${editTarget.data.id}` : "create"}
+        editTarget={editTarget}
+        initialMode={initialMode}
+        onClose={onClose}
+      />
+    </Modal>
   );
 }
 
 function EntrySheetForm({
   editTarget,
+  initialMode,
   onClose
 }: {
   editTarget?: EditTarget | null;
+  initialMode?: SheetMode;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -116,11 +112,13 @@ function EntrySheetForm({
   const project = editTarget?.type === "project" ? editTarget.data : undefined;
   const reviewInitial = problem ? reviewInitialFromProblem(problem.nextReview, problem.lastPracticed) : null;
 
-  const [mode, setMode] = useState<SheetMode>(editTarget ? sheetModeFromEditTarget(editTarget) : "problem");
+  const [mode, setMode] = useState<SheetMode>(
+    editTarget ? sheetModeFromEditTarget(editTarget) : initialMode ?? "problem"
+  );
   const [fieldsVisible, setFieldsVisible] = useState(true);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [toast, setToast] = useState("");
-  const [resumeRemoved, setResumeRemoved] = useState(false);
+  const [resumeVersionId, setResumeVersionId] = useState(application?.resumeVersionId ?? "");
   const [reviewSchedule, setReviewSchedule] = useState<{ reviewPreset?: ReviewPreset; customReviewDate?: string }>(() =>
     initialReviewSchedule(problem)
   );
@@ -169,12 +167,15 @@ function EntrySheetForm({
       setFieldErrors({});
       setToast("");
 
-      const resumeFile = formData.get("resumeFile");
       const payload: Record<string, string> = Object.fromEntries(
         [...formData.entries()]
-          .filter(([key, value]) => key !== "resumeFile" && typeof value === "string")
+          .filter(([, value]) => typeof value === "string")
           .map(([key, value]) => [key, String(value)])
       );
+
+      if (mode === "application") {
+        payload.resumeVersionId = resumeVersionId;
+      }
 
       const clientErrors = validateEntryPayload(mode, payload);
       if (Object.keys(clientErrors).length > 0) {
@@ -204,11 +205,17 @@ function EntrySheetForm({
 
       try {
         if (isEdit && editTarget) {
-          await submitEdit(editTarget, mode, payload, resumeFile, resumeRemoved);
+          await submitEdit(editTarget, mode, payload);
         } else {
-          await submitCreate(mode, payload, resumeFile);
+          await submitCreate(mode, payload);
         }
 
+        const baseMessage = isEdit ? EDIT_SUCCESS_MESSAGE[mode] : CREATE_SUCCESS_MESSAGE[mode];
+        toastSuccess(
+          mode === "problem" && reviewSchedule.customReviewDate
+            ? withNextRevisitToast(baseMessage, { customReviewDate: reviewSchedule.customReviewDate })
+            : baseMessage
+        );
         onClose();
         router.refresh();
       } catch (submitError) {
@@ -217,10 +224,11 @@ function EntrySheetForm({
             submitError.message,
             submitError.fieldErrors ?? {}
           );
+          toastError(submitError.message);
         } else {
-          handleSubmitFailure(
-            submitError instanceof Error ? submitError.message : "Unable to save this item."
-          );
+          const message = submitError instanceof Error ? submitError.message : "Unable to save this item.";
+          handleSubmitFailure(message);
+          toastError(message);
         }
       }
     });
@@ -228,11 +236,7 @@ function EntrySheetForm({
 
   const saving = isPending("submit");
 
-  async function submitCreate(
-    createMode: SheetMode,
-    payload: Record<string, string>,
-    resumeFile: FormDataEntryValue | null
-  ) {
+  async function submitCreate(createMode: SheetMode, payload: Record<string, string>) {
     const response = await fetch("/api/progress", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -247,38 +251,9 @@ function EntrySheetForm({
         mapApiFieldErrors(body.fieldErrors)
       );
     }
-
-    if (
-      createMode === "application" &&
-      body.applicationId &&
-      resumeFile instanceof File &&
-      resumeFile.size > 0 &&
-      ACTIVE_APPLICATION_STATUSES.has(payload.status)
-    ) {
-      const uploadData = new FormData();
-      uploadData.append("file", resumeFile);
-      const uploadResponse = await fetch(`/api/applications/${body.applicationId}/resume`, {
-        method: "POST",
-        body: uploadData
-      });
-
-      if (!uploadResponse.ok) {
-        const uploadBody = await uploadResponse.json().catch(() => ({ error: "Could not upload resume." }));
-        throw new EntrySheetSubmitError(
-          uploadBody.error ?? "Unable to save application.",
-          uploadBody.fieldErrors
-        );
-      }
-    }
   }
 
-  async function submitEdit(
-    target: EditTarget,
-    editMode: SheetMode,
-    payload: Record<string, string>,
-    resumeFile: FormDataEntryValue | null,
-    removeResume: boolean
-  ) {
+  async function submitEdit(target: EditTarget, editMode: SheetMode, payload: Record<string, string>) {
     if (editMode === "problem" && target.type === "problem") {
       const response = await fetch(`/api/problems/${target.data.id}`, {
         method: "PATCH",
@@ -299,7 +274,10 @@ function EntrySheetForm({
       const response = await fetch(`/api/applications/${target.data.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          ...payload,
+          resumeVersionId: payload.resumeVersionId ? payload.resumeVersionId : null
+        })
       });
       const body = await response.json().catch(() => ({ error: "Could not save changes." }));
       if (!response.ok) {
@@ -307,31 +285,6 @@ function EntrySheetForm({
           body.error ?? "Could not save changes.",
           mapApiFieldErrors(body.fieldErrors)
         );
-      }
-
-      if (removeResume) {
-        const deleteResponse = await fetch(`/api/applications/${target.data.id}/resume`, { method: "DELETE" });
-        if (!deleteResponse.ok) {
-          const deleteBody = await deleteResponse.json().catch(() => ({ error: "Could not remove resume." }));
-          throw new EntrySheetSubmitError(deleteBody.error ?? "Unable to save application.");
-        }
-      }
-
-      if (
-        resumeFile instanceof File &&
-        resumeFile.size > 0 &&
-        ACTIVE_APPLICATION_STATUSES.has(payload.status)
-      ) {
-        const uploadData = new FormData();
-        uploadData.append("file", resumeFile);
-        const uploadResponse = await fetch(`/api/applications/${target.data.id}/resume`, {
-          method: "POST",
-          body: uploadData
-        });
-        if (!uploadResponse.ok) {
-          const uploadBody = await uploadResponse.json().catch(() => ({ error: "Could not upload resume." }));
-          throw new EntrySheetSubmitError(uploadBody.error ?? "Unable to save application.");
-        }
       }
       return;
     }
@@ -391,8 +344,8 @@ function EntrySheetForm({
                   application={application}
                   fieldErrors={fieldErrors}
                   onClearError={clearFieldError}
-                  resumeRemoved={resumeRemoved}
-                  onResumeRemove={() => setResumeRemoved(true)}
+                  onResumeVersionChange={setResumeVersionId}
+                  resumeVersionId={resumeVersionId}
                 />
               ) : null}
               {mode === "project" ? (
@@ -424,6 +377,21 @@ function EntrySheetForm({
   );
 }
 
+function looksLikeLeetCodeUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      /(^|\.)leetcode\.(com|cn)$/i.test(url.hostname) &&
+      /\/problems\//i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function ProblemFields({
   problem,
   reviewInitial,
@@ -438,30 +406,199 @@ function ProblemFields({
   onClearError: (name: string) => void;
 }) {
   const [confidence, setConfidence] = useState(String(problem?.confidence ?? 3));
+  const [url, setUrl] = useState(problem?.url ?? "");
+  const [slug, setSlug] = useState(problem?.slug ?? "");
+  const [name, setName] = useState(problem?.name ?? "");
+  const [topicPattern, setTopicPattern] = useState(
+    problem ? topicPatternValue(problem.topic, problem.pattern) : ""
+  );
+  const [difficulty, setDifficulty] = useState(problem?.difficulty ?? "");
+  const [notes, setNotes] = useState(problem?.notes ?? "");
+  const [importState, setImportState] = useState<"idle" | "loading" | "success" | "failed">("idle");
+  const [importMessage, setImportMessage] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(Boolean(problem));
+  const lastImportedUrl = useRef(problem?.url?.trim() ?? "");
+  const importRequestId = useRef(0);
+
+  async function runImport(rawUrl: string) {
+    const trimmed = rawUrl.trim();
+    if (!looksLikeLeetCodeUrl(trimmed)) return;
+    if (trimmed === lastImportedUrl.current) return;
+
+    const requestId = ++importRequestId.current;
+    setImportState("loading");
+    setImportMessage("Fetching LeetCode problem…");
+
+    try {
+      const response = await fetch("/api/problems/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmed })
+      });
+      const body = (await response.json().catch(() => null)) as
+        | {
+            ok: true;
+            problem: {
+              title: string;
+              slug: string;
+              url: string;
+              difficulty: string | null;
+              topic: string;
+              pattern: string | null;
+              tags: string[];
+            };
+          }
+        | { ok: false; error?: string }
+        | null;
+
+      if (requestId !== importRequestId.current) return;
+      lastImportedUrl.current = trimmed;
+
+      if (!body || !body.ok) {
+        setImportState("failed");
+        setImportMessage(
+          body && "error" in body && body.error
+            ? body.error
+            : "We couldn't fetch that LeetCode problem. Please fill the details manually."
+        );
+        setDetailsOpen(true);
+        return;
+      }
+
+      const imported = body.problem;
+      setUrl(imported.url || trimmed);
+      setSlug(imported.slug);
+      setName(imported.title);
+      setTopicPattern(topicPatternValue(imported.topic, imported.pattern));
+      setDifficulty(imported.difficulty ?? "");
+      onClearError("name");
+      onClearError("topicPattern");
+      onClearError("url");
+      setImportState("success");
+      setImportMessage("");
+      setDetailsOpen(false);
+      lastImportedUrl.current = imported.url || trimmed;
+    } catch {
+      if (requestId !== importRequestId.current) return;
+      lastImportedUrl.current = trimmed;
+      setImportState("failed");
+      setImportMessage("We couldn't fetch that LeetCode problem. Please fill the details manually.");
+      setDetailsOpen(true);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      importRequestId.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (fieldErrors.name || fieldErrors.topicPattern) {
+      setDetailsOpen(true);
+    }
+  }, [fieldErrors]);
+
+  const showImportSummary = importState === "success" && name && topicPattern && !detailsOpen;
 
   return (
     <>
-      <QuickAddField error={fieldErrors.name} label="Problem name" name="name" onClearError={onClearError}>
+      <QuickAddField error={fieldErrors.url} label="LeetCode Problem URL" name="url" onClearError={onClearError}>
         <input
-          name="name"
-          placeholder="Two Sum"
-          defaultValue={problem?.name ?? ""}
-          onInput={() => onClearError("name")}
+          name="url"
+          type="url"
+          placeholder="https://leetcode.com/problems/two-sum/"
+          inputMode="url"
+          value={url}
+          onChange={(event) => {
+            setUrl(event.target.value);
+            onClearError("url");
+            if (importState !== "idle" && importState !== "loading") {
+              setImportState("idle");
+              setImportMessage("");
+            }
+          }}
+          onPaste={() => {
+            window.setTimeout(() => {
+              const input = document.activeElement;
+              if (input instanceof HTMLInputElement) {
+                void runImport(input.value);
+              }
+            }, 0);
+          }}
+          onBlur={() => {
+            void runImport(url);
+          }}
         />
       </QuickAddField>
-      <QuickAddField
-        error={fieldErrors.topicPattern}
-        label="Topic / pattern"
-        name="topicPattern"
-        onClearError={onClearError}
-      >
-        <input
-          name="topicPattern"
-          placeholder="Array / Hash map"
-          defaultValue={problem ? topicPatternValue(problem.topic, problem.pattern) : ""}
-          onInput={() => onClearError("topicPattern")}
-        />
-      </QuickAddField>
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="difficulty" value={difficulty} />
+
+      {importState === "loading" || importState === "failed" ? (
+        <p
+          className={`job-import-status${importState === "failed" ? " is-error" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          {importMessage}
+        </p>
+      ) : null}
+
+      {showImportSummary ? (
+        <div className="job-import-summary">
+          <div>
+            <p className="job-import-summary-title">{name}</p>
+            <p className="job-import-summary-meta">
+              {[difficulty, topicPattern].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+          <button
+            className="button secondary job-import-edit"
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+          >
+            Edit details
+          </button>
+        </div>
+      ) : null}
+
+      {detailsOpen || importState !== "success" ? (
+        <>
+          <QuickAddField error={fieldErrors.name} label="Problem name" name="name" onClearError={onClearError}>
+            <input
+              name="name"
+              placeholder="Two Sum"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                onClearError("name");
+              }}
+            />
+          </QuickAddField>
+          <QuickAddField
+            error={fieldErrors.topicPattern}
+            label="Topic / pattern"
+            name="topicPattern"
+            onClearError={onClearError}
+          >
+            <input
+              name="topicPattern"
+              placeholder="Array / Hash map"
+              value={topicPattern}
+              onChange={(event) => {
+                setTopicPattern(event.target.value);
+                onClearError("topicPattern");
+              }}
+            />
+          </QuickAddField>
+        </>
+      ) : (
+        <>
+          <input type="hidden" name="name" value={name} />
+          <input type="hidden" name="topicPattern" value={topicPattern} />
+        </>
+      )}
+
       <div className="quick-add-field-block">
         <span className="quick-add-label">Confidence</span>
         <div className="quick-add-chips">
@@ -483,8 +620,11 @@ function ProblemFields({
           name="notes"
           placeholder="Key insight, edge cases…"
           rows={2}
-          defaultValue={problem?.notes ?? ""}
-          onInput={() => onClearError("notes")}
+          value={notes}
+          onChange={(event) => {
+            setNotes(event.target.value);
+            onClearError("notes");
+          }}
         />
       </QuickAddField>
       <QuickAddReviewChips
@@ -497,50 +637,236 @@ function ProblemFields({
   );
 }
 
+function looksLikeJobUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function ApplicationFields({
   application,
-  resumeRemoved,
-  onResumeRemove,
+  resumeVersionId,
+  onResumeVersionChange,
   fieldErrors,
   onClearError
 }: {
-  application?: import("@prisma/client").Application;
-  resumeRemoved: boolean;
-  onResumeRemove: () => void;
+  application?: import("@/components/quick-add/entry-sheet-types").ApplicationEditData;
+  resumeVersionId: string;
+  onResumeVersionChange: (id: string) => void;
   fieldErrors: FieldErrors;
   onClearError: (name: string) => void;
 }) {
   const [status, setStatus] = useState(application?.status ?? "WISHLIST");
-  const showResume = ACTIVE_APPLICATION_STATUSES.has(status);
-  const hasResume = Boolean(application?.resumeFileName) && !resumeRemoved;
+  const [jobUrl, setJobUrl] = useState(application?.jobUrl ?? "");
+  const [company, setCompany] = useState(application?.company ?? "");
+  const [role, setRole] = useState(application?.role ?? "");
+  const [jobId, setJobId] = useState(application?.jobId ?? "");
+  const [location, setLocation] = useState(application?.location ?? "");
+  const [notes, setNotes] = useState(application?.notes ?? "");
+  const [importState, setImportState] = useState<"idle" | "loading" | "success" | "failed">("idle");
+  const [importMessage, setImportMessage] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(Boolean(application));
+  const lastImportedUrl = useRef(application?.jobUrl?.trim() ?? "");
+  const importRequestId = useRef(0);
+
+  async function runImport(rawUrl: string) {
+    const trimmed = rawUrl.trim();
+    if (!looksLikeJobUrl(trimmed)) return;
+    if (trimmed === lastImportedUrl.current) return;
+
+    const requestId = ++importRequestId.current;
+    setImportState("loading");
+    setImportMessage("Extracting job details…");
+
+    try {
+      const response = await fetch("/api/jobs/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmed })
+      });
+      const body = (await response.json().catch(() => null)) as
+        | { ok: true; job: JobImportResult }
+        | { ok: false; error?: string }
+        | null;
+
+      if (requestId !== importRequestId.current) return;
+
+      lastImportedUrl.current = trimmed;
+
+      if (!body || !body.ok) {
+        setImportState("failed");
+        setImportMessage(body && "error" in body && body.error ? body.error : JOB_IMPORT_FALLBACK);
+        setDetailsOpen(true);
+        return;
+      }
+
+      const job = body.job;
+      setJobUrl(job.jobUrl || trimmed);
+      setCompany(job.company);
+      setRole(job.role);
+      setJobId(job.jobId ?? "");
+      setLocation(job.location ?? "");
+      if (job.description) {
+        const snippet = job.description.slice(0, 500);
+        setNotes((current) => (current.trim() ? current : snippet));
+      }
+      onClearError("company");
+      onClearError("role");
+      onClearError("jobId");
+      onClearError("jobUrl");
+      onClearError("location");
+      setImportState("success");
+      setImportMessage("");
+      setDetailsOpen(false);
+      lastImportedUrl.current = job.jobUrl || trimmed;
+    } catch {
+      if (requestId !== importRequestId.current) return;
+      lastImportedUrl.current = trimmed;
+      setImportState("failed");
+      setImportMessage(JOB_IMPORT_FALLBACK);
+      setDetailsOpen(true);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      importRequestId.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (fieldErrors.company || fieldErrors.role || fieldErrors.jobId || fieldErrors.location) {
+      setDetailsOpen(true);
+    }
+  }, [fieldErrors]);
+
+  const showImportSummary = importState === "success" && company && role && !detailsOpen;
 
   return (
     <>
-      <QuickAddField error={fieldErrors.company} label="Company" name="company" onClearError={onClearError}>
+      <QuickAddField error={fieldErrors.jobUrl} label="Job URL" name="jobUrl" onClearError={onClearError}>
         <input
-          name="company"
-          placeholder="Stripe"
-          autoComplete="organization"
-          defaultValue={application?.company ?? ""}
-          onInput={() => onClearError("company")}
+          name="jobUrl"
+          type="url"
+          placeholder="LinkedIn, Greenhouse, Lever, Ashby…"
+          inputMode="url"
+          value={jobUrl}
+          onChange={(event) => {
+            setJobUrl(event.target.value);
+            onClearError("jobUrl");
+            if (importState !== "idle" && importState !== "loading") {
+              setImportState("idle");
+              setImportMessage("");
+            }
+          }}
+          onPaste={() => {
+            window.setTimeout(() => {
+              const input = document.activeElement;
+              if (input instanceof HTMLInputElement) {
+                void runImport(input.value);
+              }
+            }, 0);
+          }}
+          onBlur={() => {
+            void runImport(jobUrl);
+          }}
         />
       </QuickAddField>
-      <QuickAddField error={fieldErrors.role} label="Role" name="role" onClearError={onClearError}>
-        <input
-          name="role"
-          placeholder="Software Engineer"
-          defaultValue={application?.role ?? ""}
-          onInput={() => onClearError("role")}
-        />
-      </QuickAddField>
-      <QuickAddField error={fieldErrors.jobId} label="Job ID" name="jobId" onClearError={onClearError}>
-        <input
-          name="jobId"
-          placeholder="REQ-23918"
-          defaultValue={application?.jobId ?? ""}
-          onInput={() => onClearError("jobId")}
-        />
-      </QuickAddField>
+
+      {importState === "loading" || importState === "failed" ? (
+        <p
+          className={`job-import-status${importState === "failed" ? " is-error" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          {importMessage}
+        </p>
+      ) : null}
+
+      {showImportSummary ? (
+        <div className="job-import-summary">
+          <div>
+            <p className="job-import-summary-title">
+              {company} · {role}
+            </p>
+            {location || jobId ? (
+              <p className="job-import-summary-meta">
+                {[location, jobId ? `ID ${jobId}` : null].filter(Boolean).join(" · ")}
+              </p>
+            ) : null}
+          </div>
+          <button
+            className="button secondary job-import-edit"
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+          >
+            Edit details
+          </button>
+        </div>
+      ) : null}
+
+      {detailsOpen || importState !== "success" ? (
+        <>
+          <QuickAddField error={fieldErrors.company} label="Company" name="company" onClearError={onClearError}>
+            <input
+              name="company"
+              placeholder="Stripe"
+              autoComplete="organization"
+              value={company}
+              onChange={(event) => {
+                setCompany(event.target.value);
+                onClearError("company");
+              }}
+            />
+          </QuickAddField>
+          <QuickAddField error={fieldErrors.role} label="Role" name="role" onClearError={onClearError}>
+            <input
+              name="role"
+              placeholder="Software Engineer"
+              value={role}
+              onChange={(event) => {
+                setRole(event.target.value);
+                onClearError("role");
+              }}
+            />
+          </QuickAddField>
+          <QuickAddField error={fieldErrors.jobId} label="Job ID" name="jobId" onClearError={onClearError}>
+            <input
+              name="jobId"
+              placeholder="REQ-23918"
+              value={jobId}
+              onChange={(event) => {
+                setJobId(event.target.value);
+                onClearError("jobId");
+              }}
+            />
+          </QuickAddField>
+          <QuickAddField error={fieldErrors.location} label="Location" name="location" onClearError={onClearError}>
+            <input
+              name="location"
+              placeholder="San Francisco, CA"
+              value={location}
+              onChange={(event) => {
+                setLocation(event.target.value);
+                onClearError("location");
+              }}
+            />
+          </QuickAddField>
+        </>
+      ) : (
+        <>
+          <input type="hidden" name="company" value={company} />
+          <input type="hidden" name="role" value={role} />
+          <input type="hidden" name="jobId" value={jobId} />
+          <input type="hidden" name="location" value={location} />
+        </>
+      )}
+
       <QuickAddField error={fieldErrors.status} label="Status" name="status" onClearError={onClearError}>
         <select
           name="status"
@@ -557,64 +883,24 @@ function ApplicationFields({
           ))}
         </select>
       </QuickAddField>
-      <QuickAddField error={fieldErrors.jobUrl} label="Job URL" name="jobUrl" onClearError={onClearError}>
-        <input
-          name="jobUrl"
-          type="url"
-          placeholder="https://…"
-          inputMode="url"
-          defaultValue={application?.jobUrl ?? ""}
-          onInput={() => onClearError("jobUrl")}
-        />
-      </QuickAddField>
-      {showResume ? (
-        <div className="quick-add-field" data-field="resumeFile">
-          <span className="quick-add-label">Resume</span>
-          {hasResume && application ? (
-            <div className="quick-add-resume-current">
-              <p className="quick-add-resume-name" title={application.resumeFileName ?? undefined}>
-                {application.resumeFileName}
-              </p>
-              <div className="quick-add-resume-actions">
-                <a
-                  className="quick-add-resume-action"
-                  href={`/api/applications/${application.id}/resume`}
-                  download={application.resumeFileName ?? undefined}
-                >
-                  <Download size={14} />
-                  Download
-                </a>
-                <label className="quick-add-resume-action">
-                  Replace
-                  <input
-                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    className="quick-add-resume-file-input"
-                    name="resumeFile"
-                    type="file"
-                  />
-                </label>
-                <button className="quick-add-resume-action danger" onClick={onResumeRemove} type="button">
-                  Remove
-                </button>
-              </div>
-            </div>
-          ) : (
-            <input
-              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              className="quick-add-file"
-              name="resumeFile"
-              type="file"
-            />
-          )}
-        </div>
-      ) : null}
+      <ResumeVersionSelectLoader
+        error={fieldErrors.resumeVersionId}
+        onChange={(id) => {
+          onResumeVersionChange(id);
+          onClearError("resumeVersionId");
+        }}
+        value={resumeVersionId}
+      />
       <QuickAddField error={fieldErrors.notes} label="Notes" name="notes" onClearError={onClearError}>
         <textarea
           name="notes"
           placeholder="Recruiter, comp range…"
           rows={2}
-          defaultValue={application?.notes ?? ""}
-          onInput={() => onClearError("notes")}
+          value={notes}
+          onChange={(event) => {
+            setNotes(event.target.value);
+            onClearError("notes");
+          }}
         />
       </QuickAddField>
     </>

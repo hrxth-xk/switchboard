@@ -21,6 +21,13 @@ export function validateEntryPayload(mode: SheetMode, payload: Record<string, st
     if (!payload.topicPattern?.trim() || payload.topicPattern.trim().length < 2) {
       errors.topicPattern = "This field is required.";
     }
+    if (payload.url?.trim()) {
+      try {
+        new URL(payload.url.trim());
+      } catch {
+        errors.url = "Enter a valid URL.";
+      }
+    }
   }
 
   if (mode === "application") {

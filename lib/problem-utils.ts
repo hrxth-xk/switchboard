@@ -10,9 +10,11 @@ export type ProblemRow = {
   id: string;
   name: string;
   url: string | null;
+  slug: string | null;
   topic: string;
   pattern: string | null;
-  confidence: number;
+  difficulty: string | null;
+  confidence: number | null;
   notes: string | null;
   lastPracticed: string;
   nextReview: string | null;
@@ -32,6 +34,11 @@ export const CONFIDENCE_LABELS: Record<number, string> = {
   1: "Watched solution"
 };
 
+export function formatConfidence(confidence: number | null | undefined) {
+  if (confidence == null) return "Unknown";
+  return `${confidence}/5 · ${CONFIDENCE_LABELS[confidence] ?? "Unknown"}`;
+}
+
 function asDate(value: Date | string) {
   return typeof value === "string" ? new Date(value) : value;
 }
@@ -41,8 +48,10 @@ export function serializeProblem(problem: Problem): ProblemRow {
     id: problem.id,
     name: problem.name,
     url: problem.url,
+    slug: problem.slug,
     topic: problem.topic,
     pattern: problem.pattern,
+    difficulty: problem.difficulty,
     confidence: problem.confidence,
     notes: problem.notes,
     lastPracticed: problem.lastPracticed.toISOString(),
@@ -79,12 +88,15 @@ export function getReviewQueue<T extends ReviewableProblem>(
 
 export function getProblemStats(problems: Problem[], now = new Date(), timeZone: string = detectTimeZone()) {
   const patterns = new Set(problems.map((problem) => problem.pattern).filter(Boolean));
+  const rated = problems.filter((problem) => problem.confidence != null);
 
   return {
     total: problems.length,
     reviewDue: getReviewQueue(problems, now, timeZone).length,
-    avgConfidence: problems.length
-      ? Math.round((problems.reduce((sum, problem) => sum + problem.confidence, 0) / problems.length) * 10) / 10
+    avgConfidence: rated.length
+      ? Math.round(
+          (rated.reduce((sum, problem) => sum + (problem.confidence ?? 0), 0) / rated.length) * 10
+        ) / 10
       : 0,
     patternsCovered: patterns.size
   };

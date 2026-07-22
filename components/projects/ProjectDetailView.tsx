@@ -7,6 +7,8 @@ import type { Project } from "@prisma/client";
 import { EntrySheet } from "@/components/quick-add/EntrySheet";
 import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { formatShortDate } from "@/lib/problem-utils";
+import { toastSuccess } from "@/lib/toast";
+import { useConfirm } from "@/hooks/useConfirm";
 import { usePendingAction } from "@/hooks/usePendingAction";
 
 type ProjectDetailViewProps = {
@@ -19,6 +21,7 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const { run, isPending, isBusy } = usePendingAction<ProjectAction>();
+  const { confirm, confirmDialog } = useConfirm();
   const [error, setError] = useState("");
 
   async function runAction(action: "pause" | "resume" | "complete") {
@@ -39,7 +42,12 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
   }
 
   async function deleteProject() {
-    if (!window.confirm(`Delete ${project.title}?`)) return;
+    const confirmed = await confirm({
+      title: `Delete ${project.title}?`,
+      description: "This can't be undone.",
+      confirmLabel: "Delete"
+    });
+    if (!confirmed) return;
 
     setError("");
     await run("delete", async () => {
@@ -49,6 +57,7 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
         setError(body.error);
         return;
       }
+      toastSuccess("Deleted");
       router.push("/dashboard/projects");
       router.refresh();
     });
@@ -65,7 +74,7 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
         </header>
 
         <div className="detail-panel">
-          {error ? <div className="error wide">{error}</div> : null}
+          {error ? <div className="error wide" role="alert">{error}</div> : null}
 
           <dl className="detail-grid">
             <div>
@@ -154,6 +163,9 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
         open={editing}
         onClose={() => setEditing(false)}
       />
+
+      {confirmDialog}
     </>
   );
 }
+
