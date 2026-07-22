@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { UserPlus } from "lucide-react";
+import { AuthCard } from "@/components/auth/AuthCard";
+import { AuthShell } from "@/components/auth/AuthShell";
 import { LoginForm } from "@/components/LoginForm";
 import { getSession } from "@/lib/auth";
 
@@ -9,25 +11,29 @@ export default async function LoginPage() {
   if (session) redirect("/dashboard");
 
   return (
-    <main className="login-screen">
-      <section className="login-box">
-        <div className="brand" style={{ marginBottom: 24 }}>
-          <span className="brand-mark">S</span>
-          <span>Switchboard</span>
-        </div>
-        <h1>Job switch progress, without the noise.</h1>
-        <p className="subhead" style={{ marginBottom: 22 }}>
-          Log problems, move applications, and ship portfolio work — one queue for what matters today.
-        </p>
-        <LoginForm />
-        <Link className="button secondary" href="/signup" style={{ width: "100%", marginTop: 12 }}>
-          <UserPlus size={18} />
-          Create account
-        </Link>
-        <p className="panel-kicker" style={{ marginTop: 16 }}>
-          Seed demo: user@switchboard.local / user1234
-        </p>
-      </section>
-    </main>
+    <AuthShell>
+      <div className="auth-page">
+        <span aria-hidden="true" className="auth-brand-mark">
+          S
+        </span>
+        <header className="macro-hero auth-hero">
+          <h1 className="macro-hero-title">Sign in</h1>
+          <p className="macro-hero-tagline">
+            Log problems, move applications, and ship portfolio work — one queue for what matters today.
+          </p>
+        </header>
+
+        <AuthCard>
+          <LoginForm />
+          <div className="auth-card-actions">
+            <Link className="button secondary auth-button" href="/signup">
+              <UserPlus size={18} />
+              Create account
+            </Link>
+          </div>
+          <p className="auth-footnote">Seed demo: user@switchboard.local / user1234</p>
+        </AuthCard>
+      </div>
+    </AuthShell>
   );
 }

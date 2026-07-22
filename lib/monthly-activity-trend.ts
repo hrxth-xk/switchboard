@@ -6,7 +6,8 @@ type ApplicationTrendRow = { appliedAt: Date | null; status: string };
 type ProjectTrendRow = { updatedAt: Date };
 
 export type ActivityTrendDay = {
-  actions: number;
+  /** Overall day completion 0–100 from capped per-category percentages. */
+  completionPercent: number;
   isToday: boolean;
 };
 
@@ -51,9 +52,32 @@ export function dailyActionTarget(goals: UserGoalsData) {
   return goals.dailyDsaGoal + goals.dailyApplicationsGoal + goals.dailyProjectSessionsGoal;
 }
 
-export function activityBarHeightPercent(actions: number, dailyTarget: number) {
-  if (actions <= 0 || dailyTarget <= 0) return 0;
-  return Math.min((actions / dailyTarget) * TARGET_LINE_PERCENT, 100);
+/** Map a 0–100 completion score to bar height on the chart. */
+export function activityBarHeightPercent(completionPercent: number) {
+  if (completionPercent <= 0) return 0;
+  return Math.min((completionPercent / 100) * TARGET_LINE_PERCENT, 100);
+}
+
+function dayCompletionPercent(
+  dsa: number,
+  applications: number,
+  projects: number,
+  goals: UserGoalsData
+) {
+  const categoryPercents: number[] = [];
+
+  if (goals.dailyDsaGoal > 0) {
+    categoryPercents.push(Math.min(dsa / goals.dailyDsaGoal, 1) * 100);
+  }
+  if (goals.dailyApplicationsGoal > 0) {
+    categoryPercents.push(Math.min(applications / goals.dailyApplicationsGoal, 1) * 100);
+  }
+  if (goals.dailyProjectSessionsGoal > 0) {
+    categoryPercents.push(Math.min(projects / goals.dailyProjectSessionsGoal, 1) * 100);
+  }
+
+  if (categoryPercents.length === 0) return 0;
+  return Math.round(categoryPercents.reduce((sum, value) => sum + value, 0) / categoryPercents.length);
 }
 
 export function buildMonthlyActivityTrend(
@@ -70,13 +94,15 @@ export function buildMonthlyActivityTrend(
     const date = new Date(todayStart);
     date.setDate(todayStart.getDate() - (29 - index));
 
-    const actions =
-      countDsaForDay(problems, date) +
-      countApplicationsForDay(applications, date) +
-      countProjectsForDay(projects, date);
+    const completionPercent = dayCompletionPercent(
+      countDsaForDay(problems, date),
+      countApplicationsForDay(applications, date),
+      countProjectsForDay(projects, date),
+      goals
+    );
 
     return {
-      actions,
+      completionPercent,
       isToday: startOfDay(date).getTime() === todayStart.getTime()
     };
   });

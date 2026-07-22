@@ -1,6 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { Inter } from "next/font/google";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap"
+});
 
 export const metadata: Metadata = {
   title: "Switchboard",
@@ -15,8 +23,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html className={inter.variable} lang="en">
+      <body>
+        {children}
+        <ToastProvider />
+      </body>
     </html>
   );
 }

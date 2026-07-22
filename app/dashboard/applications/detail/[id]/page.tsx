@@ -12,7 +12,12 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
   const user = await requireUser();
 
   const application = await prisma.application.findFirst({
-    where: { id, userId: user.id }
+    where: { id, userId: user.id },
+    include: {
+      resumeVersion: {
+        select: { id: true, name: true, version: true, originalFileName: true, createdAt: true }
+      }
+    }
   });
 
   if (!application) {

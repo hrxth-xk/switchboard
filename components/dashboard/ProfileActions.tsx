@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 
 type ProfileActionsProps = {
@@ -19,6 +18,12 @@ export function ProfileActions({ displayName, email, isAdmin }: ProfileActionsPr
       </div>
 
       <div className="more-actions">
+        <Link className="more-link" href="/dashboard/resumes">
+          Resume Library
+        </Link>
+        <Link className="more-link" href="/dashboard/import">
+          Import Data
+        </Link>
         <Link className="more-link" href="/dashboard/goals">
           Goal settings
         </Link>

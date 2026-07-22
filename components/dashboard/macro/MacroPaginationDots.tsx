@@ -5,15 +5,9 @@ type MacroPaginationDotsProps = {
 
 export function MacroPaginationDots({ count, active }: MacroPaginationDotsProps) {
   return (
-    <div className="macro-dots" role="tablist" aria-label="Dashboard period">
+    <div aria-hidden="true" className="macro-dots">
       {Array.from({ length: count }, (_, index) => (
-        <span
-          key={index}
-          role="tab"
-          aria-selected={index === active}
-          aria-label={["Daily", "Weekly", "Monthly"][index]}
-          className={`macro-dot${index === active ? " active" : ""}`}
-        />
+        <span className={`macro-dot${index === active ? " active" : ""}`} key={index} />
       ))}
     </div>
   );

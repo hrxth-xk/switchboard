@@ -1,5 +1,9 @@
 "use client";
 
+import { motion } from "framer-motion";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { EASE_OUT } from "@/lib/motion";
+
 type MacroGaugeRowProps = {
   remaining: number;
   completed: number;
@@ -52,31 +56,39 @@ export function MacroGaugeRow({ remaining, completed, target, percent }: MacroGa
             strokeLinecap="round"
             strokeWidth={stroke}
           />
-          <path
+          <motion.path
+            animate={{ strokeDashoffset: offset }}
             className="macro-gauge-fill"
             d={path}
             fill="none"
+            initial={{ strokeDashoffset: length }}
             stroke="var(--text)"
             strokeLinecap="round"
             strokeWidth={stroke}
             strokeDasharray={length}
-            strokeDashoffset={offset}
+            transition={{ duration: 0.9, ease: EASE_OUT }}
           />
         </svg>
 
         <div className="macro-gauge-metrics">
           <div className="macro-gauge-metric">
-            <span className="macro-gauge-metric-value">{remaining}</span>
+            <span className="macro-gauge-metric-value">
+              <AnimatedNumber value={remaining} />
+            </span>
             <span className="macro-gauge-metric-label">Remaining</span>
           </div>
 
           <div className="macro-gauge-metric macro-gauge-metric-center">
-            <span className="macro-gauge-metric-value macro-gauge-metric-value-center">{completed}</span>
+            <span className="macro-gauge-metric-value macro-gauge-metric-value-center">
+              <AnimatedNumber value={completed} />
+            </span>
             <span className="macro-gauge-metric-label">Completed</span>
           </div>
 
           <div className="macro-gauge-metric">
-            <span className="macro-gauge-metric-value">{target}</span>
+            <span className="macro-gauge-metric-value">
+              <AnimatedNumber value={target} />
+            </span>
             <span className="macro-gauge-metric-label">Target</span>
           </div>
         </div>

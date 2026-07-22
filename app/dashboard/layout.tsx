@@ -1,5 +1,6 @@
 import { BottomNav } from "@/components/dashboard/BottomNav";
 import { DesktopTopNav } from "@/components/dashboard/DesktopTopNav";
+import { PageTransition } from "@/components/dashboard/PageTransition";
 import { RefreshOnDayChange } from "@/components/dashboard/RefreshOnDayChange";
 import { QuickAddFab } from "@/components/DashboardClient";
 import { requireUser } from "@/lib/auth";
@@ -15,7 +16,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <DesktopTopNav displayName={displayName} />
 
       <div className="app-main">
-        <div className="page">{children}</div>
+        <div className="page">
+          <PageTransition>{children}</PageTransition>
+        </div>
       </div>
 
       <BottomNav />

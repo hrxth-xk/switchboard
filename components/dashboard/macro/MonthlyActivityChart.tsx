@@ -22,7 +22,7 @@ export function MonthlyActivityChart({ days, dailyTarget }: MonthlyActivityChart
           />
 
           {days.map((day, index) => {
-            const height = activityBarHeightPercent(day.actions, dailyTarget);
+            const height = activityBarHeightPercent(day.completionPercent);
 
             return (
               <div

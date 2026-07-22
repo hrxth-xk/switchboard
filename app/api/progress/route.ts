@@ -18,8 +18,10 @@ const problemSchema = z.object({
   type: z.literal("problem"),
   name: z.string().min(2, "This field is required."),
   url: z.string().url("Enter a valid URL.").optional().or(z.literal("")),
+  slug: z.string().optional().or(z.literal("")),
   topic: z.string().min(2, "This field is required."),
   pattern: z.string().optional(),
+  difficulty: z.string().optional().or(z.literal("")),
   confidence: z.coerce.number().min(1).max(5),
   notes: z.string().optional(),
   reviewPreset: z.enum(["tomorrow", "threeDays", "oneWeek", "twoWeeks", "oneMonth"]).optional(),
@@ -36,7 +38,8 @@ const applicationSchema = z.object({
   status: z.enum(["WISHLIST", "APPLIED", "OA", "INTERVIEW", "OFFER", "REJECTED"]),
   nextAction: z.string().optional(),
   notes: z.string().optional(),
-  appliedAt: z.string().optional()
+  appliedAt: z.string().optional(),
+  resumeVersionId: z.string().optional().or(z.literal(""))
 });
 
 const noteSchema = z.object({
@@ -91,7 +94,15 @@ export async function POST(request: Request) {
 
   if (data.type === "problem") {
     const name = normalizeProblemName(data.name);
-    const existing = await prisma.problem.findFirst({ where: { userId: user.id, name } });
+    const existing = await prisma.problem.findFirst({
+      where: {
+        userId: user.id,
+        OR: [
+          { name },
+          ...(data.slug ? [{ slug: data.slug }] : [])
+        ]
+      }
+    });
     const nextReview = problemNextReview(data, data.confidence, now, timeZone);
 
     if (existing) {
@@ -99,8 +110,10 @@ export async function POST(request: Request) {
         where: { id: existing.id },
         data: {
           url: data.url || existing.url,
+          slug: data.slug || existing.slug,
           topic: data.topic,
           pattern: data.pattern || null,
+          difficulty: data.difficulty || existing.difficulty,
           confidence: data.confidence,
           notes: data.notes ?? existing.notes,
           lastPracticed: now,
@@ -118,8 +131,10 @@ export async function POST(request: Request) {
         userId: user.id,
         name,
         url: data.url || null,
+        slug: data.slug || null,
         topic: data.topic,
         pattern: data.pattern || null,
+        difficulty: data.difficulty || null,
         confidence: data.confidence,
         notes: data.notes || null,
         lastPracticed: now,
@@ -151,6 +166,19 @@ export async function POST(request: Request) {
           ? now
           : null;
 
+    let resumeVersionId: string | null = null;
+    if (data.resumeVersionId) {
+      const resume = await prisma.resumeVersion.findFirst({
+        where: { id: data.resumeVersionId, userId: user.id }
+      });
+      if (!resume) {
+        return jsonWithFieldErrors("Selected resume was not found.", 400, {
+          resumeVersionId: "Choose a resume from your library."
+        });
+      }
+      resumeVersionId = resume.id;
+    }
+
     const application = await prisma.application.create({
       data: {
         userId: user.id,
@@ -162,7 +190,8 @@ export async function POST(request: Request) {
         status: data.status,
         nextAction: data.nextAction || null,
         notes: data.notes || null,
-        appliedAt
+        appliedAt,
+        resumeVersionId
       }
     });
 

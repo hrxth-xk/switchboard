@@ -11,8 +11,10 @@ import { getRequestTimeZone } from "@/lib/timezone";
 const updateSchema = z.object({
   name: z.string().min(2).optional(),
   url: z.string().url().optional().or(z.literal("")),
+  slug: z.string().optional().or(z.literal("")),
   topic: z.string().min(2).optional(),
   pattern: z.string().optional().or(z.literal("")),
+  difficulty: z.string().optional().or(z.literal("")),
   confidence: z.coerce.number().min(1).max(5).optional(),
   notes: z.string().optional().or(z.literal("")),
   lastPracticed: z.string().optional(),
@@ -51,7 +53,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       {
         preset: body.reviewPreset as ReviewPreset | undefined,
         customDate: body.customReviewDate,
-        confidence: body.reviewPreset || body.customReviewDate ? undefined : confidence
+        confidence:
+          body.reviewPreset || body.customReviewDate
+            ? undefined
+            : confidence ?? undefined
       },
       now,
       timeZone
@@ -73,9 +78,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     data: {
       name: nextName,
       url: body.url === "" ? null : body.url ?? problem.url,
+      slug: body.slug === "" ? null : body.slug ?? problem.slug,
       topic: body.topic ?? problem.topic,
       pattern: body.pattern === "" ? null : body.pattern ?? problem.pattern,
-      confidence,
+      difficulty: body.difficulty === "" ? null : body.difficulty ?? problem.difficulty,
+      confidence: body.confidence ?? problem.confidence,
       notes: body.notes === "" ? null : body.notes ?? problem.notes,
       lastPracticed: isRevisit ? now : body.lastPracticed ? new Date(body.lastPracticed) : problem.lastPracticed,
       nextReview,

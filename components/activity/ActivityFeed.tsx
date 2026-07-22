@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Activity as ActivityIcon } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { StaggerList } from "@/components/ui/StaggerList";
 import {
   activityCategoryIcon,
   filterActivities,
@@ -99,9 +102,13 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
       </div>
 
       {visible.length ? (
-        <ul className="activity-log">
-          {visible.map((item) => (
-            <li className="activity-log-item" key={item.id}>
+        <StaggerList
+          className="activity-log"
+          getKey={(item) => item.id}
+          itemClassName="activity-log-item"
+          items={visible}
+          renderItem={(item) => (
+            <>
               <span aria-hidden="true" className={`activity-log-icon ${categoryIconClass(item.category)}`}>
                 {activityCategoryIcon(item.category)}
               </span>
@@ -114,13 +121,17 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
                 </p>
                 {item.description ? <p className="activity-log-description">{item.description}</p> : null}
               </div>
-            </li>
-          ))}
-        </ul>
+            </>
+          )}
+        />
+      ) : items.length ? (
+        <p className="empty-inline workspace-empty">No activity matches this filter.</p>
       ) : (
-        <p className="empty-inline workspace-empty">
-          {items.length ? "No activity matches this filter." : "Activity appears as you log problems, move applications, and update projects."}
-        </p>
+        <EmptyState
+          description="Activity appears automatically as you log problems, move applications, and update projects."
+          icon={ActivityIcon}
+          title="Nothing here yet"
+        />
       )}
 
       {hasMore ? (

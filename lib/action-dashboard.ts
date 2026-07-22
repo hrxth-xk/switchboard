@@ -11,7 +11,7 @@ export type AccentTone = "positive" | "attention" | "neutral";
 
 export type ActionCardMetrics = {
   reviewDue: number;
-  activeApplications: number;
+  applicationsTotal: number;
   activeProjects: number;
 };
 
@@ -62,7 +62,7 @@ export function buildActionCards(
 ): ActionCardsData {
   const effectiveGoals = goals ?? DEFAULT_GOALS;
   const todayCount = countTodayActivities(activities, now);
-  const { reviewDue, activeApplications, activeProjects } = metrics;
+  const { reviewDue, applicationsTotal, activeProjects } = metrics;
   const solvedToday = countSolvedToday(activities, now);
   const problemsLeft = Math.max(effectiveGoals.dailyDsaGoal - solvedToday, 0);
 
@@ -74,7 +74,7 @@ export function buildActionCards(
         : `${problemsLeft} problems left today`;
 
   const applicationLabel =
-    activeApplications === 1 ? "1 Application" : `${activeApplications} Applications`;
+    applicationsTotal === 1 ? "1 application till date" : `${applicationsTotal} applications till date`;
   const projectLabel =
     activeProjects === 1 ? "1 Active Project" : `${activeProjects} Active Projects`;
 
@@ -89,9 +89,9 @@ export function buildActionCards(
       tone: reviewDue > 0 || problemsLeft > 0 ? "attention" : "positive"
     },
     applications: {
-      count: activeApplications,
-      metric: activeApplications === 0 ? "No active applications" : applicationLabel,
-      tone: activeApplications > 0 ? "positive" : "neutral"
+      count: applicationsTotal,
+      metric: applicationsTotal === 0 ? "No applications yet" : applicationLabel,
+      tone: applicationsTotal > 0 ? "positive" : "neutral"
     },
     projects: {
       count: activeProjects,

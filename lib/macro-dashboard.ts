@@ -54,7 +54,7 @@ export async function buildMacroDashboard(
     trendApplications,
     trendProjects,
     reviewCandidates,
-    activeApplications,
+    applicationsTotal,
     activeProjects,
     dailyDsa,
     weeklyDsa,
@@ -89,7 +89,7 @@ export async function buildMacroDashboard(
       select: { nextReview: true }
     }),
     prisma.application.count({
-      where: { userId, status: { in: ["APPLIED", "OA", "INTERVIEW"] } }
+      where: { userId }
     }),
     prisma.project.count({
       where: { userId, status: "ACTIVE" }
@@ -122,7 +122,7 @@ export async function buildMacroDashboard(
   const effectiveGoals = goalsData ?? DEFAULT_GOALS;
   const metrics: ActionCardMetrics = {
     reviewDue,
-    activeApplications,
+    applicationsTotal,
     activeProjects
   };
 
