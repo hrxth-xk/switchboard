@@ -9,20 +9,36 @@ datasource db {
 }
 
 model User {
-  id             String          @id @default(cuid())
-  name           String
-  email          String          @unique
-  passwordHash   String
-  role           String          @default("USER")
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  problems       Problem[]
-  applications   Application[]
-  notes          Note[]
-  projects       Project[]
-  activities     Activity[]
-  goals          UserGoals?
-  resumeVersions ResumeVersion[]
+  id                String          @id @default(cuid())
+  name              String
+  email             String          @unique
+  passwordHash      String
+  role              String          @default("USER")
+  passwordChangedAt DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  problems          Problem[]
+  applications      Application[]
+  notes             Note[]
+  projects          Project[]
+  activities        Activity[]
+  goals             UserGoals?
+  resumeVersions    ResumeVersion[]
+  authTokens        AuthToken[]
+}
+
+/// One-time tokens emailed to the user. `purpose` is PASSWORD_RESET.
+model AuthToken {
+  id        String    @id @default(cuid())
+  userId    String
+  purpose   String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
 }
 
 model UserGoals {
@@ -49,11 +65,28 @@ model Problem {
   nextReview    DateTime?
   revisitCount  Int       @default(1)
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revisits      ProblemRevisit[]
 
   @@unique([userId, name])
   @@index([userId, nextReview])
   @@index([userId, topic])
   @@index([userId, slug])
+}
+
+/// History of revisits, holding the values each one replaced so it can be undone
+/// long after the toast is gone. The newest row is the one "Undo Last Revisit" pops.
+model ProblemRevisit {
+  id                String    @id @default(cuid())
+  problemId         String
+  reviewedAt        DateTime
+  prevLastPracticed DateTime
+  prevNextReview    DateTime?
+  prevRevisitCount  Int
+  prevConfidence    Int?
+  createdAt         DateTime  @default(now())
+  problem           Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@index([problemId, reviewedAt])
 }
 
 model ResumeVersion {

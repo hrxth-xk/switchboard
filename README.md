@@ -323,8 +323,27 @@ Creates `Note` row.
 | `SESSION_SECRET` | Yes | JWT signing secret for session cookies |
 | `SUPABASE_URL` | Yes | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server-side storage access for resumes |
+| `APP_URL` | No | Public origin used in password reset links (falls back to `VERCEL_URL`, then the request host) |
+| `RESEND_API_KEY` | No | [Resend](https://resend.com/) key for password reset email. Unset in dev ⇒ the reset link is printed to the server console instead of emailed |
+| `MAIL_FROM` | No | From address for outgoing mail (default: `Switchboard <onboarding@resend.dev>`) |
 | `ADMIN_EMAIL` | No | Seed script admin email (default: `admin@switchboard.local`) |
 | `ADMIN_PASSWORD` | No | Seed script admin password |
+
+### Password reset
+
+> **Dormant until mail is configured.** The flow works end to end, but with no `RESEND_API_KEY` the link is only
+> printed to the server console — so the "Forgot password?" link is deliberately **not** shown on the login page.
+> Add it back to `.auth-card-actions` in `app/login/page.tsx` once Resend is set up.
+
+`/forgot-password` emails a one-time link to `/reset-password?token=…`. Tokens are stored as SHA-256 hashes in
+`AuthToken` (keyed by `purpose`), expire after 60 minutes, and are single-use — requesting a new link invalidates the
+previous one.
+Resetting or changing a password stamps `User.passwordChangedAt`, which `getSession()` compares against the session
+JWT's `iat` to sign out every other device. Signed-in users can change their password at
+`/dashboard/password` (requires the current password).
+
+Rate limiting on these endpoints (`lib/rate-limit.ts`) is an in-memory fixed window: it is per-instance and resets on
+cold start, so treat it as a deterrent rather than a guarantee.
 
 Copy `.env.example` to `.env.local` for local development.
 
@@ -422,6 +441,9 @@ For production, prefer `prisma migrate deploy` over `db push` once migration his
 | POST | `/api/auth/login` | Sign in |
 | POST | `/api/auth/signup` | Register |
 | POST | `/api/auth/logout` | Sign out |
+| POST | `/api/auth/forgot-password` | Email a password reset link (always `{ ok: true }`) |
+| POST | `/api/auth/reset-password` | Consume a reset token and set a new password |
+| POST | `/api/auth/change-password` | Change password while signed in |
 | POST | `/api/progress` | Quick Add create |
 | PATCH/DELETE | `/api/problems/[id]` | Update/delete problem; `action: "revisit"` |
 | PATCH/DELETE | `/api/applications/[id]` | Update/delete application |

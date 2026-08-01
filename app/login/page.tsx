@@ -30,6 +30,8 @@ export default async function LoginPage() {
               <UserPlus size={18} />
               Create account
             </Link>
+            {/* "Forgot password?" link intentionally omitted: /forgot-password works,
+                but no mail is sent until RESEND_API_KEY is configured. */}
           </div>
           <p className="auth-footnote">Seed demo: user@switchboard.local / user1234</p>
         </AuthCard>

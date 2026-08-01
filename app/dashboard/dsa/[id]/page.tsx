@@ -20,5 +20,17 @@ export default async function ProblemDetailPage({ params }: ProblemDetailPagePro
     notFound();
   }
 
-  return <ProblemDetailView problem={serializeProblem(problem)} />;
+  // Newest revisit still on record — what "Undo Last Revisit" would roll back.
+  const lastRevisit = await prisma.problemRevisit.findFirst({
+    where: { problemId: problem.id },
+    orderBy: { reviewedAt: "desc" },
+    select: { reviewedAt: true }
+  });
+
+  return (
+    <ProblemDetailView
+      lastRevisitAt={lastRevisit?.reviewedAt.toISOString() ?? null}
+      problem={serializeProblem(problem)}
+    />
+  );
 }

@@ -27,6 +27,9 @@ export function ProfileActions({ displayName, email, isAdmin }: ProfileActionsPr
         <Link className="more-link" href="/dashboard/goals">
           Goal settings
         </Link>
+        <Link className="more-link" href="/dashboard/password">
+          Change password
+        </Link>
         {isAdmin ? (
           <Link className="more-link" href="/dashboard/admin">
             Admin

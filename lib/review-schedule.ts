@@ -31,6 +31,11 @@ const CONFIDENCE_DAYS: Record<number, number> = {
   5: 30
 };
 
+/** Days until the next revisit for a 1-5 confidence rating. */
+export function confidenceIntervalDays(confidence: number) {
+  return CONFIDENCE_DAYS[confidence] ?? CONFIDENCE_DAYS[3];
+}
+
 /** @deprecated Prefer addCalendarDays — kept for any remaining imports. */
 export function endOfDay(date: Date) {
   return civilDateToUtcNoon(calendarDayKey(date));
@@ -41,8 +46,7 @@ export function addDays(from: Date, days: number, timeZone?: string) {
 }
 
 export function calculateNextReview(confidence: number, from = new Date(), timeZone?: string) {
-  const days = CONFIDENCE_DAYS[confidence] ?? CONFIDENCE_DAYS[3];
-  return addDays(from, days, timeZone);
+  return addDays(from, confidenceIntervalDays(confidence), timeZone);
 }
 
 export function reviewDateFromPreset(preset: ReviewPreset, from = new Date(), timeZone?: string) {
@@ -100,4 +104,14 @@ export function withNextRevisitToast(
     )}`;
   }
   return base;
+}
+
+/** Append next-revisit copy for an already-resolved date (e.g. returned by the API). */
+export function withScheduledRevisitToast(
+  base: string,
+  nextReview: string | Date | null | undefined,
+  timeZone?: string
+) {
+  if (!nextReview) return base;
+  return `${base} · Next revisit scheduled for ${formatRevisitScheduleLabel(nextReview, timeZone)}`;
 }
