@@ -21,9 +21,8 @@ export function ProfileActions({ displayName, email, isAdmin }: ProfileActionsPr
         <Link className="more-link" href="/dashboard/resumes">
           Resume Library
         </Link>
-        <Link className="more-link" href="/dashboard/import">
-          Import Data
-        </Link>
+        {/* Import Data link removed from the UI on purpose. /dashboard/import
+            and its LeetCode importer are still live if you navigate directly. */}
         <Link className="more-link" href="/dashboard/goals">
           Goal settings
         </Link>
