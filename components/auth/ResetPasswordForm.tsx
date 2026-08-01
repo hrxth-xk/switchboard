@@ -2,13 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { TextField } from "@/components/ui/TextField";
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 import { usePendingAction } from "@/hooks/usePendingAction";
 
-export function SignupForm() {
+type ResetPasswordFormProps = {
+  token: string;
+};
+
+export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const router = useRouter();
   const [error, setError] = useState("");
   const { run, isPending } = usePendingAction<"submit">();
@@ -21,28 +25,25 @@ export function SignupForm() {
       const confirm = String(formData.get("confirmPassword") ?? "");
 
       if (password !== confirm) {
-        setError("Both password fields must match.");
+        setError("Both passwords must match.");
         return;
       }
 
-      const response = await fetch("/api/auth/signup", {
+      const response = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.get("name"),
-          email: formData.get("email"),
-          password
-        })
+        body: JSON.stringify({ token, password })
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => ({ error: "Unable to create account." }));
+        const body = await response.json().catch(() => ({ error: "Unable to reset the password." }));
         setError(body.error);
-        toastError(body.error ?? "Unable to create account.");
+        toastError(body.error ?? "Unable to reset the password.");
         return;
       }
 
-      router.push("/dashboard");
+      toastSuccess("Password updated — sign in with your new password.");
+      router.push("/login");
       router.refresh();
     });
   }
@@ -56,21 +57,26 @@ export function SignupForm() {
           {error}
         </div>
       ) : null}
-      <TextField autoComplete="name" label="Name" name="name" required />
-      <TextField autoComplete="email" label="Email" name="email" required type="email" />
-      <TextField autoComplete="new-password" label="Password" minLength={8} name="password" required type="password" />
       <TextField
         autoComplete="new-password"
-        label="Confirm password"
+        label="New password"
+        minLength={8}
+        name="password"
+        required
+        type="password"
+      />
+      <TextField
+        autoComplete="new-password"
+        label="Confirm new password"
         minLength={8}
         name="confirmPassword"
         required
         type="password"
       />
       <button className="button" disabled={loading} type="submit">
-        <ActionButtonContent pending={loading} pendingLabel="Creating account…">
-          <UserPlus size={18} />
-          Create account
+        <ActionButtonContent pending={loading} pendingLabel="Updating…">
+          <KeyRound size={18} />
+          Update password
         </ActionButtonContent>
       </button>
     </form>

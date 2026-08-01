@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { logActivity } from "@/lib/activity";
+import { deleteLatestActivity, logActivity } from "@/lib/activity";
 import { requireUser } from "@/lib/auth";
 import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
@@ -22,7 +22,7 @@ const updateSchema = z.object({
   revisitCount: z.coerce.number().min(1).optional(),
   reviewPreset: z.enum(["tomorrow", "threeDays", "oneWeek", "twoWeeks", "oneMonth"]).optional(),
   customReviewDate: z.string().optional(),
-  action: z.enum(["revisit"]).optional()
+  action: z.enum(["revisit", "undo-revisit"]).optional()
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -44,6 +44,54 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const timeZone = getRequestTimeZone();
   const confidence = body.confidence ?? problem.confidence;
   const isRevisit = body.action === "revisit";
+
+  // Undo replays the newest history row verbatim, so it returns before the
+  // schedule resolution below — that block would recompute nextReview from the
+  // restored confidence, and `nextReview` alone cannot express "back to
+  // unscheduled". The values come from the database, never from the client, so
+  // the button still works after a reload or on another device.
+  if (body.action === "undo-revisit") {
+    const previous = await prisma.problemRevisit.findFirst({
+      where: { problemId: problem.id },
+      orderBy: { reviewedAt: "desc" }
+    });
+
+    if (!previous) {
+      return NextResponse.json({ error: "There's no revisit to undo." }, { status: 400 });
+    }
+
+    // The revisit set lastPracticed to reviewedAt; anything else means the
+    // problem was edited since, and rewinding would clobber that edit.
+    if (problem.lastPracticed.getTime() !== previous.reviewedAt.getTime()) {
+      return NextResponse.json(
+        { error: "This problem changed since that revisit, so nothing was undone." },
+        { status: 409 }
+      );
+    }
+
+    await prisma.$transaction([
+      prisma.problem.update({
+        where: { id },
+        data: {
+          lastPracticed: previous.prevLastPracticed,
+          nextReview: previous.prevNextReview,
+          revisitCount: previous.prevRevisitCount,
+          confidence: previous.prevConfidence
+        }
+      }),
+      prisma.problemRevisit.delete({ where: { id: previous.id } })
+    ]);
+
+    // Drop the activity row too, or streaks keep counting a revisit that was undone.
+    await deleteLatestActivity(user.id, `Revisited ${problem.name}`);
+    revalidateUserDashboard(user.id);
+
+    return NextResponse.json({
+      ok: true,
+      nextReview: previous.prevNextReview?.toISOString() ?? null,
+      confidence: previous.prevConfidence
+    });
+  }
 
   let nextReview = problem.nextReview;
   if (body.nextReview) {
@@ -90,9 +138,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
   });
 
+  // Record what this revisit replaced so it can be undone later.
+  if (isRevisit) {
+    await prisma.problemRevisit.create({
+      data: {
+        problemId: problem.id,
+        reviewedAt: now,
+        prevLastPracticed: problem.lastPracticed,
+        prevNextReview: problem.nextReview,
+        prevRevisitCount: problem.revisitCount,
+        prevConfidence: problem.confidence
+      }
+    });
+  }
+
   await logActivity(user.id, isRevisit ? `Revisited ${nextName}` : `Updated ${nextName}`);
   revalidateUserDashboard(user.id);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    nextReview: nextReview?.toISOString() ?? null,
+    confidence: body.confidence ?? problem.confidence,
+    ...(isRevisit ? { canUndo: true } : {})
+  });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {

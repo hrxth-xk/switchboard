@@ -4,25 +4,43 @@ import { useEffect, useState } from "react";
 import { QuickAddReviewChips } from "@/components/quick-add/QuickAddReviewChips";
 import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { Modal } from "@/components/ui/Modal";
+import { CONFIDENCE_LABELS } from "@/lib/problem-utils";
 import type { ReviewPreset } from "@/lib/review-schedule";
+import {
+  calculateNextReview,
+  confidenceIntervalDays,
+  formatRevisitScheduleLabel
+} from "@/lib/review-schedule";
 
 type ScheduleMode = "auto" | "manual";
-type SheetStep = "choose" | "manual";
+type SheetStep = "choose" | "confidence" | "manual";
 
 type MarkReviewedSheetProps = {
   open: boolean;
   pending: boolean;
   error: string;
+  currentConfidence: number | null;
   onClose: () => void;
   onConfirm: (schedule: {
     reviewPreset?: ReviewPreset;
     customReviewDate?: string;
+    confidence?: number;
   }) => void;
 };
 
-export function MarkReviewedSheet({ open, pending, error, onClose, onConfirm }: MarkReviewedSheetProps) {
+const CONFIDENCE_ORDER = [5, 4, 3, 2, 1];
+
+export function MarkReviewedSheet({
+  open,
+  pending,
+  error,
+  currentConfidence,
+  onClose,
+  onConfirm
+}: MarkReviewedSheetProps) {
   const [step, setStep] = useState<SheetStep>("choose");
   const [mode, setMode] = useState<ScheduleMode>("auto");
+  const [confidence, setConfidence] = useState(currentConfidence ?? 3);
   const [manualSchedule, setManualSchedule] = useState<{
     reviewPreset?: ReviewPreset;
     customReviewDate?: string;
@@ -32,15 +50,12 @@ export function MarkReviewedSheet({ open, pending, error, onClose, onConfirm }: 
     if (!open) return;
     setStep("choose");
     setMode("auto");
+    setConfidence(currentConfidence ?? 3);
     setManualSchedule({ reviewPreset: "oneWeek" });
-  }, [open]);
+  }, [open, currentConfidence]);
 
   function handleChooseContinue() {
-    if (mode === "auto") {
-      onConfirm({});
-      return;
-    }
-    setStep("manual");
+    setStep(mode === "auto" ? "confidence" : "manual");
   }
 
   function handleManualSave() {
@@ -52,6 +67,8 @@ export function MarkReviewedSheet({ open, pending, error, onClose, onConfirm }: 
   }
 
   const manualReady = Boolean(manualSchedule.reviewPreset || manualSchedule.customReviewDate);
+  const autoIntervalDays = confidenceIntervalDays(confidence);
+  const autoReviewLabel = formatRevisitScheduleLabel(calculateNextReview(confidence));
 
   return (
     <Modal
@@ -87,7 +104,7 @@ export function MarkReviewedSheet({ open, pending, error, onClose, onConfirm }: 
               />
               <span>
                 <strong>Auto schedule</strong>
-                <span className="mark-reviewed-option-hint">Recommended — based on confidence</span>
+                <span className="mark-reviewed-option-hint">Recommended — rate your confidence, we pick the date</span>
               </span>
             </label>
 
@@ -118,7 +135,62 @@ export function MarkReviewedSheet({ open, pending, error, onClose, onConfirm }: 
               type="button"
             >
               <ActionButtonContent pending={pending} pendingLabel="Saving…">
-                {mode === "auto" ? "Confirm" : "Continue"}
+                Continue
+              </ActionButtonContent>
+            </button>
+          </div>
+        </>
+      ) : step === "confidence" ? (
+        <>
+          <div className="modal-header mark-reviewed-sheet-head">
+            <div>
+              <h2 id="mark-reviewed-title">How confident are you now?</h2>
+              <p className="mark-reviewed-sheet-copy">
+                We&apos;ll schedule the next revisit from this rating.
+              </p>
+            </div>
+            <button aria-label="Close" className="modal-close" disabled={pending} onClick={onClose} type="button">
+              ×
+            </button>
+          </div>
+
+          {error ? <div className="error wide" role="alert">{error}</div> : null}
+
+          <div className="mark-reviewed-manual">
+            <div className="quick-add-field-block">
+              <span className="quick-add-label">Confidence</span>
+              <div className="quick-add-chips mark-reviewed-confidence-chips">
+                {CONFIDENCE_ORDER.map((value) => (
+                  <button
+                    className={`quick-add-chip${confidence === value ? " active" : ""}`}
+                    disabled={pending}
+                    key={value}
+                    onClick={() => setConfidence(value)}
+                    type="button"
+                  >
+                    {value} · {CONFIDENCE_LABELS[value]}
+                  </button>
+                ))}
+              </div>
+              <p className="mark-reviewed-confidence-preview">
+                Next revisit: <strong>{autoReviewLabel}</strong> · in {autoIntervalDays}{" "}
+                {autoIntervalDays === 1 ? "day" : "days"}
+              </p>
+            </div>
+          </div>
+
+          <div className="mark-reviewed-actions">
+            <button className="button secondary" disabled={pending} onClick={() => setStep("choose")} type="button">
+              Back
+            </button>
+            <button
+              className={`button${pending ? " is-pending" : ""}`}
+              disabled={pending}
+              onClick={() => onConfirm({ confidence })}
+              type="button"
+            >
+              <ActionButtonContent pending={pending} pendingLabel="Saving…">
+                Confirm
               </ActionButtonContent>
             </button>
           </div>

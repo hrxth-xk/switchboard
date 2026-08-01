@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { createSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { verifyPassword } from "@/lib/password";
 
 const schema = z.object({
   email: z.string().email(),
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
 
   try {
     const user = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
-    if (!user || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
+    if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
       return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
     }
 

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { hashPassword, passwordSchema } from "@/lib/password";
 
 const schema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: passwordSchema,
   role: z.enum(["ADMIN", "USER"])
 });
 
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     data: {
       name: parsed.data.name,
       email: parsed.data.email.toLowerCase(),
-      passwordHash: await bcrypt.hash(parsed.data.password, 12),
+      passwordHash: await hashPassword(parsed.data.password),
       role: parsed.data.role
     },
     select: { id: true, name: true, email: true, role: true }

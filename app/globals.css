@@ -4058,6 +4058,25 @@ h1 {
   margin-top: 12px;
 }
 
+.mark-reviewed-confidence-chips {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.mark-reviewed-confidence-chips .quick-add-chip {
+  text-align: left;
+}
+
+.mark-reviewed-confidence-preview {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.mark-reviewed-confidence-preview strong {
+  color: var(--text);
+}
+
 .mark-reviewed-actions {
   display: flex;
   justify-content: flex-end;
@@ -5510,20 +5529,22 @@ h1 {
   }
 }
 
-/* Toasts (sonner) */
+/* Toasts (sonner) — original top-of-screen card, sized up to read at a glance. */
 
 .app-toast {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  width: min(380px, calc(100vw - 32px));
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  gap: 12px;
+  /* Fills the toaster, which is sized by --width in ToastProvider. Setting a
+     width wider than that container here would push the toast off centre. */
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--text) 8%, var(--line));
+  border-radius: 12px;
   background: var(--panel-2);
   color: var(--text);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  font-size: 0.875rem;
+  box-shadow: 0 18px 44px -8px rgba(0, 0, 0, 0.65);
+  font-size: 0.9375rem;
 }
 
 .app-toast-icon {
@@ -5532,22 +5553,48 @@ h1 {
   color: var(--muted);
 }
 
+.app-toast-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .app-toast-content {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
 .app-toast-title {
   font-weight: 650;
   color: var(--text);
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .app-toast-description {
   color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.app-toast-action {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--text) 22%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
   font-size: 0.8125rem;
-  line-height: 1.4;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.app-toast-action:hover {
+  border-color: color-mix(in srgb, var(--text) 38%, var(--line));
+  background: color-mix(in srgb, var(--text) 16%, transparent);
 }
 
 .app-toast-success {

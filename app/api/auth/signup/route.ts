@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { createSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { hashPassword, passwordSchema } from "@/lib/password";
 
 const schema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(8)
+  password: passwordSchema
 });
 
 export async function POST(request: Request) {
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     data: {
       name: parsed.data.name,
       email,
-      passwordHash: await bcrypt.hash(parsed.data.password, 12),
+      passwordHash: await hashPassword(parsed.data.password),
       role: "USER"
     }
   });
