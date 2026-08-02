@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { modalBackdropTransition, modalPanelTransition } from "@/lib/motion";
 
@@ -19,6 +20,19 @@ type ModalProps = {
 export function Modal({ open, onClose, children, labelledBy, className = "", closeOnOverlayClick = true }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+
+  /*
+   * Render into <body> rather than inline. `.app-main` is `position: relative;
+   * z-index: 1`, which makes it a stacking context — an inline overlay's
+   * z-index:50 would only compete inside that 1 and would lose to the fixed
+   * bottom nav (35) and FAB (40), leaving the sheet's buttons untappable.
+   * Modals opened from the layout (Quick Add) never hit this because they mount
+   * outside `.app-main`; ones opened from page content did.
+   */
+  useEffect(() => {
+    setContainer(document.body);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -66,7 +80,11 @@ export function Modal({ open, onClose, children, labelledBy, className = "", clo
     };
   }, [open, onClose]);
 
-  return (
+  // Modals start closed, so rendering nothing until the container is resolved
+  // costs no visible frame and avoids touching `document` during SSR.
+  if (!container) return null;
+
+  return createPortal(
     <AnimatePresence>
       {open ? (
         <motion.div
@@ -94,6 +112,7 @@ export function Modal({ open, onClose, children, labelledBy, className = "", clo
           </motion.div>
         </motion.div>
       ) : null}
-    </AnimatePresence>
+    </AnimatePresence>,
+    container
   );
 }
