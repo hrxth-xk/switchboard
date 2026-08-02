@@ -1,24 +1,39 @@
-import { cleanRoleTitle, jobPostingFields, titleCaseSlug } from "@/lib/job-import/html";
 import type { JobImporter } from "@/lib/job-import/types";
+
+type LeverPosting = {
+  id?: string;
+  text?: string;
+  categories?: { location?: string; team?: string };
+  descriptionPlain?: string;
+};
 
 export const leverImporter: JobImporter = {
   id: "lever",
-  matches(url) {
-    return /(^|\.)lever\.co$/i.test(url.hostname) && url.pathname.length > 1;
-  },
-  async importJob(url, html) {
-    const parts = url.pathname.split("/").filter(Boolean);
-    const companySlug = parts[0];
-    const jobId = parts[1] ?? null;
-    const fields = html ? jobPostingFields(html) : null;
+  matches: (facts) => facts.board === "lever",
+  allowHtmlFallback: true,
 
-    return {
-      company: fields?.company ?? (companySlug ? titleCaseSlug(companySlug) : null),
-      role: cleanRoleTitle(fields?.role),
-      jobId: fields?.jobId ?? jobId,
-      location: fields?.location,
-      jobUrl: url.toString(),
-      description: fields?.description
-    };
+  async enrich(ctx) {
+    const site = ctx.facts.companySlug;
+    const jobId = ctx.facts.jobId;
+    if (!site || !jobId) return [];
+
+    const target = new URL(
+      `https://api.lever.co/v0/postings/${encodeURIComponent(site)}/${encodeURIComponent(jobId)}`
+    );
+
+    const posting = await ctx.fetchJson<LeverPosting>(target);
+    if (!posting?.text) return [];
+
+    return [
+      {
+        source: "api",
+        fields: {
+          role: posting.text,
+          location: posting.categories?.location ?? null,
+          description: posting.descriptionPlain ?? null,
+          jobId: posting.id ?? null
+        }
+      }
+    ];
   }
 };

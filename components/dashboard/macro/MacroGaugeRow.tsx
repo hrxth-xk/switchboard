@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { arcLength, arcPath } from "@/lib/gauge-arc";
 import { EASE_OUT } from "@/lib/motion";
 
 type MacroGaugeRowProps = {
@@ -10,22 +11,6 @@ type MacroGaugeRowProps = {
   target: number;
   percent: number;
 };
-
-function polar(cx: number, cy: number, radius: number, angleDeg: number) {
-  const radians = ((angleDeg - 90) * Math.PI) / 180;
-  return {
-    x: cx + radius * Math.cos(radians),
-    y: cy + radius * Math.sin(radians)
-  };
-}
-
-function arcPath(cx: number, cy: number, radius: number, startDeg: number, endDeg: number) {
-  const start = polar(cx, cy, radius, startDeg);
-  const end = polar(cx, cy, radius, endDeg);
-  const sweep = (endDeg - startDeg + 360) % 360;
-  const largeArc = sweep > 180 ? 1 : 0;
-  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`;
-}
 
 export function MacroGaugeRow({ remaining, completed, target, percent }: MacroGaugeRowProps) {
   const clamped = Math.min(Math.max(percent, 0), 100);
@@ -36,8 +21,7 @@ export function MacroGaugeRow({ remaining, completed, target, percent }: MacroGa
   // Horseshoe open at the bottom — matches the reference ring
   const startDeg = 220;
   const endDeg = 140;
-  const sweepDeg = (endDeg - startDeg + 360) % 360;
-  const length = (2 * Math.PI * radius * sweepDeg) / 360;
+  const length = arcLength(radius, startDeg, endDeg);
   const offset = length - (clamped / 100) * length;
   const path = arcPath(cx, cy, radius, startDeg, endDeg);
 

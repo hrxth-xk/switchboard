@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { UserPlus } from "lucide-react";
+import { Sparkles, UserPlus } from "lucide-react";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { LoginForm } from "@/components/LoginForm";
@@ -11,10 +11,14 @@ export default async function LoginPage() {
   if (session) redirect("/dashboard");
 
   return (
-    <AuthShell>
+    <AuthShell action={{ href: "/signup", label: "Create account" }}>
       <div className="auth-page">
         <span aria-hidden="true" className="auth-brand-mark">
           S
+        </span>
+        <span className="landing-eyebrow">
+          <Sparkles aria-hidden="true" size={13} />
+          Welcome back
         </span>
         <header className="macro-hero auth-hero">
           <h1 className="macro-hero-title">Sign in</h1>

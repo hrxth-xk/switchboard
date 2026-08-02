@@ -3,6 +3,7 @@ import { DesktopTopNav } from "@/components/dashboard/DesktopTopNav";
 import { PageTransition } from "@/components/dashboard/PageTransition";
 import { RefreshOnDayChange } from "@/components/dashboard/RefreshOnDayChange";
 import { QuickAddFab } from "@/components/DashboardClient";
+import { AmbientBackground } from "@/components/ui/AmbientBackground";
 import { requireUser } from "@/lib/auth";
 import { getUserDisplayLabel } from "@/lib/user-display";
 
@@ -12,6 +13,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <main className="shell shell-app">
+      <AmbientBackground tone="app" />
       <RefreshOnDayChange />
       <DesktopTopNav displayName={displayName} />
 

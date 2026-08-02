@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Sparkles } from "lucide-react";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { SignupForm } from "@/components/SignupForm";
@@ -11,10 +11,14 @@ export default async function SignupPage() {
   if (session) redirect("/dashboard");
 
   return (
-    <AuthShell>
+    <AuthShell action={{ href: "/login", label: "Log in" }}>
       <div className="auth-page">
         <span aria-hidden="true" className="auth-brand-mark">
           S
+        </span>
+        <span className="landing-eyebrow">
+          <Sparkles aria-hidden="true" size={13} />
+          Two minutes to set up
         </span>
         <header className="macro-hero auth-hero">
           <h1 className="macro-hero-title">Create account</h1>

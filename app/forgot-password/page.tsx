@@ -11,7 +11,7 @@ export default async function ForgotPasswordPage() {
   if (session) redirect("/dashboard");
 
   return (
-    <AuthShell>
+    <AuthShell action={{ href: "/login", label: "Log in" }}>
       <div className="auth-page">
         <span aria-hidden="true" className="auth-brand-mark">
           S
