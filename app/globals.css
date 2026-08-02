@@ -4072,7 +4072,9 @@ h1 {
 
 .mark-reviewed-sheet {
   width: min(100%, 420px);
-  max-height: min(90vh, 640px);
+  /* dvh, not vh — vh resolves against the large viewport, so with the mobile
+     URL bar showing the sheet could run past the visible area. */
+  max-height: min(90dvh, 640px);
   overflow: auto;
 }
 
@@ -5920,6 +5922,13 @@ a.landing-eyebrow:hover {
 /* The mock is inert: its links must not navigate off the landing page. */
 .landing-preview-inert {
   pointer-events: none;
+  /* This is a grid item of .macro-dashboard, whose implicit column is `auto`.
+     Without min-width:0 the item's automatic minimum size resolves to the
+     carousel's min-content, which widens the track past the frame and stretches
+     every row — including the action cards — off the right edge. In the real app
+     .macro-carousel-viewport is a direct grid child and its overflow:hidden
+     already zeroes that minimum. */
+  min-width: 0;
 }
 
 /* Real buttons wearing the app's dot indicators, with a comfortable hit area. */
@@ -6833,6 +6842,20 @@ a.landing-eyebrow:hover {
 }
 
 /* Landing breakpoints */
+
+/* Phones: let the mock frame sit closer to the screen edges so the dashboard
+   inside gets roughly the width it has in the real app (~344px vs 354px).
+   At the container's default 22px padding it only had 312px and read as cramped. */
+@media (max-width: 639px) {
+  .landing-preview-wrap {
+    padding-inline: 8px;
+  }
+
+  .landing-preview-body {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+}
 
 @media (min-width: 640px) {
   .landing-stats {

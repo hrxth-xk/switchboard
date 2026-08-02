@@ -102,23 +102,52 @@ function InertBlock({ children }: { children: ReactNode }) {
 
 export function ProductPreview() {
   const stageRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
   const reduceMotion = useReducedMotion();
   const inView = useInView(stageRef, { amount: 0.3 });
   const [index, setIndex] = useState(0);
   const [pinned, setPinned] = useState(false);
+  const [slideWidth, setSlideWidth] = useState(0);
   const [slideHeights, setSlideHeights] = useState<number[]>([]);
 
   const { scrollYProgress } = useScroll({ target: stageRef, offset: ["start 0.95", "start 0.35"] });
   const rotateX = useTransform(scrollYProgress, [0, 1], [11, 0]);
   const scale = useTransform(scrollYProgress, [0, 1], [0.94, 1]);
 
+  // Width in pixels, exactly like MacroDashboard — percentage widths interact
+  // badly with the slides' content-based minimums.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const measure = () => setSlideWidth(viewport.clientWidth);
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
   // Mirror the app's carousel: the viewport takes the height of the live slide.
   useLayoutEffect(() => {
     const slides = slideRefs.current.filter(Boolean) as HTMLElement[];
     if (!slides.length) return;
 
-    const measure = () => setSlideHeights(slides.map((slide) => slide.getBoundingClientRect().height));
+    /*
+     * offsetHeight, not getBoundingClientRect(): the frame above carries a
+     * scroll-driven scale/rotateX, and getBoundingClientRect returns the
+     * *visually transformed* box — ~8% short at rest, which sliced the tracker
+     * counts off the bottom. ResizeObserver reports the border box, so it never
+     * re-fired when the transform settled and the short height stuck.
+     * MacroDashboard can use the rect safely because nothing transforms it.
+     */
+    const measure = () => setSlideHeights(slides.map((slide) => slide.offsetHeight));
     measure();
 
     const observers = slides.map((slide) => {
@@ -143,6 +172,16 @@ export function ProductPreview() {
   }
 
   const activeHeight = slideHeights[index];
+  // minWidth defeats any content-based minimum, maxWidth defeats growth.
+  const slideStyle = slideWidth
+    ? { width: slideWidth, minWidth: slideWidth, maxWidth: slideWidth }
+    : undefined;
+  const trackStyle = slideWidth
+    ? {
+        width: slideWidth * PERIOD_LABELS.length,
+        transform: `translate3d(-${index * slideWidth}px, 0, 0)`
+      }
+    : undefined;
 
   return (
     <div className="landing-preview-stage" ref={stageRef}>
@@ -169,19 +208,17 @@ export function ProductPreview() {
 
               <div
                 className="macro-carousel-viewport"
+                ref={viewportRef}
                 style={activeHeight ? { height: activeHeight } : undefined}
               >
-                <div
-                  className="macro-carousel-track"
-                  style={{ width: "300%", transform: `translate3d(-${(index * 100) / 3}%, 0, 0)` }}
-                >
-                  <div className="macro-page" ref={setSlideRef(0)} style={{ flex: "0 0 33.3333%" }}>
+                <div className="macro-carousel-track" style={trackStyle}>
+                  <div className="macro-page" ref={setSlideRef(0)} style={slideStyle}>
                     <DailyPage progress={DAILY_PROGRESS} />
                   </div>
-                  <div className="macro-page" ref={setSlideRef(1)} style={{ flex: "0 0 33.3333%" }}>
+                  <div className="macro-page" ref={setSlideRef(1)} style={slideStyle}>
                     <WeeklyPage days={WEEKLY_BREAKDOWN} />
                   </div>
-                  <div className="macro-page" ref={setSlideRef(2)} style={{ flex: "0 0 33.3333%" }}>
+                  <div className="macro-page" ref={setSlideRef(2)} style={slideStyle}>
                     <MonthlyPage activityTrend={ACTIVITY_TREND} monthly={MONTHLY_PROGRESS} />
                   </div>
                 </div>
