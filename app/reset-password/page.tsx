@@ -16,7 +16,7 @@ export default async function ResetPasswordPage({ searchParams }: ResetPasswordP
   const valid = token ? await findValidAuthToken(token, "PASSWORD_RESET") : null;
 
   return (
-    <AuthShell>
+    <AuthShell action={{ href: "/login", label: "Log in" }}>
       <div className="auth-page">
         <span aria-hidden="true" className="auth-brand-mark">
           S

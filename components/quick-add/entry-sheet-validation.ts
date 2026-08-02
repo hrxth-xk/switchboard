@@ -1,5 +1,6 @@
 import type { FieldErrors } from "@/lib/api-errors";
 import type { SheetMode } from "@/components/quick-add/entry-sheet-types";
+import { normalizeJobUrl } from "@/lib/job-import/url-parse";
 
 export class EntrySheetSubmitError extends Error {
   fieldErrors?: FieldErrors;
@@ -37,12 +38,10 @@ export function validateEntryPayload(mode: SheetMode, payload: Record<string, st
     if (!payload.role?.trim() || payload.role.trim().length < 2) {
       errors.role = "This field is required.";
     }
-    if (payload.jobUrl?.trim()) {
-      try {
-        new URL(payload.jobUrl.trim());
-      } catch {
-        errors.jobUrl = "Enter a valid URL.";
-      }
+    // Same normalisation the importer uses, so "stripe.com/jobs/1" can't pass
+    // the import gate and then be rejected here.
+    if (payload.jobUrl?.trim() && !normalizeJobUrl(payload.jobUrl)) {
+      errors.jobUrl = "Enter a valid URL.";
     }
   }
 

@@ -1,4 +1,13 @@
-/** Shared HTML / URL helpers for job importers. */
+/**
+ * Regex-based HTML extraction.
+ *
+ * Deliberately split by trust level: `jsonLdFields` reads a structured
+ * schema.org JobPosting, while `metaContent`/`documentTitle` read page branding.
+ * The previous version blended the two behind one `jobPostingFields` call, which
+ * is how a careers landing page's og:title ended up in the Role field.
+ */
+
+import type { JobField } from "@/lib/job-import/types";
 
 export function decodeHtmlEntities(value: string) {
   return value
@@ -23,23 +32,30 @@ export function stripTags(html: string) {
   );
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function metaContent(html: string, key: string) {
+  const safeKey = escapeRegExp(key);
   const patterns = [
-    new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']+)["']`, "i"),
-    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${key}["']`, "i")
+    new RegExp(`<meta[^>]+(?:property|name)=["']${safeKey}["'][^>]+content=["']([^"']*)["']`, "i"),
+    new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${safeKey}["']`, "i")
   ];
 
   for (const pattern of patterns) {
     const match = html.match(pattern);
-    if (match?.[1]) return decodeHtmlEntities(match[1].trim());
+    if (match?.[1]) return decodeHtmlEntities(match[1]).trim() || null;
   }
   return null;
 }
 
 export function documentTitle(html: string) {
-  const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  return match?.[1] ? decodeHtmlEntities(match[1].trim()) : null;
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match?.[1] ? decodeHtmlEntities(match[1]).replace(/\s+/g, " ").trim() || null : null;
 }
+
+export type JsonLdNode = Record<string, unknown>;
 
 export function extractJsonLd(html: string): unknown[] {
   const blocks: unknown[] = [];
@@ -54,40 +70,33 @@ export function extractJsonLd(html: string): unknown[] {
       if (Array.isArray(parsed)) blocks.push(...parsed);
       else blocks.push(parsed);
     } catch {
-      // ignore malformed JSON-LD
+      // Malformed JSON-LD is common; skip it.
     }
   }
 
   return blocks;
 }
 
-type JsonLdNode = Record<string, unknown>;
-
 function asNodes(value: unknown): JsonLdNode[] {
   if (!value || typeof value !== "object") return [];
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => asNodes(item));
-  }
+  if (Array.isArray(value)) return value.flatMap((item) => asNodes(item));
   return [value as JsonLdNode];
+}
+
+function isJobPosting(node: JsonLdNode) {
+  const type = node["@type"];
+  const types = Array.isArray(type) ? type.map(String) : type ? [String(type)] : [];
+  return types.some((item) => item.toLowerCase() === "jobposting");
 }
 
 export function findJobPosting(html: string): JsonLdNode | null {
   const nodes = extractJsonLd(html).flatMap(asNodes);
 
   for (const node of nodes) {
-    const type = node["@type"];
-    const types = Array.isArray(type) ? type.map(String) : type ? [String(type)] : [];
-    if (types.some((item) => item.toLowerCase() === "jobposting")) return node;
-
+    if (isJobPosting(node)) return node;
     if (node["@graph"]) {
       for (const child of asNodes(node["@graph"])) {
-        const childType = child["@type"];
-        const childTypes = Array.isArray(childType)
-          ? childType.map(String)
-          : childType
-            ? [String(childType)]
-            : [];
-        if (childTypes.some((item) => item.toLowerCase() === "jobposting")) return child;
+        if (isJobPosting(child)) return child;
       }
     }
   }
@@ -95,77 +104,63 @@ export function findJobPosting(html: string): JsonLdNode | null {
   return null;
 }
 
-export function jobPostingFields(html: string): {
-  company: string | null;
-  role: string | null;
-  location: string | null;
-  description: string | null;
-  jobId: string | null;
-} {
-  const posting = findJobPosting(html);
-  if (!posting) {
-    return {
-      company: metaContent(html, "og:site_name"),
-      role: metaContent(html, "og:title") ?? documentTitle(html),
-      location: null,
-      description: metaContent(html, "og:description") ?? metaContent(html, "description"),
-      jobId: null
-    };
+function organizationName(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "name" in value) {
+    return String((value as { name?: unknown }).name ?? "") || null;
   }
+  return null;
+}
 
-  const org = posting.hiringOrganization;
-  let company: string | null = null;
-  if (typeof org === "string") company = org;
-  else if (org && typeof org === "object" && "name" in org) {
-    company = String((org as { name?: unknown }).name ?? "") || null;
-  }
+function postingLocation(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return null;
 
-  let location: string | null = null;
-  const loc = posting.jobLocation;
-  if (typeof loc === "string") location = loc;
-  else if (loc && typeof loc === "object") {
-    const address = Array.isArray(loc)
-      ? (loc[0] as JsonLdNode | undefined)?.address
-      : (loc as JsonLdNode).address;
-    if (typeof address === "string") location = address;
-    else if (address && typeof address === "object") {
-      const addr = address as JsonLdNode;
-      location = [addr.addressLocality, addr.addressRegion, addr.addressCountry]
-        .filter(Boolean)
-        .map(String)
-        .join(", ");
-    }
-  }
+  const first = Array.isArray(value) ? (value[0] as JsonLdNode | undefined) : (value as JsonLdNode);
+  const address = first?.address;
+  if (typeof address === "string") return address;
+  if (!address || typeof address !== "object") return null;
 
-  const description =
-    typeof posting.description === "string" ? stripTags(posting.description).slice(0, 2000) : null;
+  const parts = address as JsonLdNode;
+
+  return (
+    [parts.addressLocality, parts.addressRegion, organizationName(parts.addressCountry) ?? parts.addressCountry]
+      .filter((part) => typeof part === "string" || typeof part === "number")
+      .map(String)
+      .filter(Boolean)
+      .join(", ") || null
+  );
+}
+
+/**
+ * schema.org `identifier` is either a bare string/number or a PropertyValue.
+ * `name` on a PropertyValue is usually the label ("Job ID"), so it is only
+ * accepted when it actually looks like an identifier.
+ */
+function postingIdentifier(value: unknown): string | null {
+  if (typeof value === "string" || typeof value === "number") return String(value) || null;
+  if (!value || typeof value !== "object") return null;
+
+  const node = Array.isArray(value) ? (value[0] as JsonLdNode | undefined) : (value as JsonLdNode);
+  if (!node) return null;
+
+  const direct = node.value;
+  if (typeof direct === "string" || typeof direct === "number") return String(direct) || null;
+
+  const name = node.name;
+  if (typeof name === "string" && /\d/.test(name)) return name;
+
+  return null;
+}
+
+export function jsonLdFields(posting: JsonLdNode): Partial<Record<JobField, string | null>> {
+  const description = posting.description;
 
   return {
-    company,
+    company: organizationName(posting.hiringOrganization),
     role: typeof posting.title === "string" ? posting.title : null,
-    location: location || null,
-    description,
-    jobId:
-      typeof posting.identifier === "string"
-        ? posting.identifier
-        : posting.identifier && typeof posting.identifier === "object" && "value" in posting.identifier
-          ? String((posting.identifier as { value?: unknown }).value ?? "") || null
-          : null
+    location: postingLocation(posting.jobLocation),
+    description: typeof description === "string" ? stripTags(description) : null,
+    jobId: postingIdentifier(posting.identifier)
   };
-}
-
-export function titleCaseSlug(slug: string) {
-  return slug
-    .replace(/[-_]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-export function cleanRoleTitle(title: string | null | undefined) {
-  if (!title) return null;
-  return title
-    .replace(/\s*[|\-–—]\s*(LinkedIn|Greenhouse|Lever|Ashby|Workday|Careers|Jobs).*$/i, "")
-    .replace(/\s+at\s+.+$/i, "")
-    .trim();
 }

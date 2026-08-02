@@ -1,100 +1,149 @@
-import { JOB_IMPORTERS } from "@/lib/job-import/importers";
-import type { JobImportDraft, JobImportResponse, JobImportResult } from "@/lib/job-import/types";
-
-const FETCH_TIMEOUT_MS = 8_000;
-const MAX_HTML_BYTES = 1_500_000;
-
-const FALLBACK_MESSAGE = "We couldn't extract the job details. Please fill them manually.";
-
-function normalizeUrl(raw: string): URL | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-
-  try {
-    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-    const url = new URL(withProtocol);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    return url;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchPageHtml(url: URL): Promise<string | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(url.toString(), {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        Accept: "text/html,application/xhtml+xml",
-        "User-Agent":
-          "Mozilla/5.0 (compatible; SwitchboardJobImport/1.0; +https://localhost)",
-        "Accept-Language": "en-US,en;q=0.9"
-      },
-      cache: "no-store"
-    });
-
-    if (!response.ok) return null;
-
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!/text\/html|application\/xhtml/i.test(contentType) && contentType.length > 0) {
-      return null;
-    }
-
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength > MAX_HTML_BYTES) return null;
-
-    return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function toResult(url: URL, draft: JobImportDraft): JobImportResult | null {
-  const company = draft.company?.trim() || "";
-  const role = draft.role?.trim() || "";
-  if (!company || !role) return null;
-
-  return {
-    company,
-    role,
-    jobId: draft.jobId?.trim() || null,
-    location: draft.location?.trim() || null,
-    jobUrl: draft.jobUrl?.trim() || url.toString(),
-    description: draft.description?.trim() || null
-  };
-}
-
 /**
- * Resolve a job posting URL to a normalized job object.
- * The caller never needs to know which importer matched.
+ * Job import pipeline.
+ *
+ * Layers, each contributing candidates rather than a final answer:
+ *   url    parse the link          always available, zero latency, unblockable
+ *   api    board JSON API          Eightfold, Greenhouse, Lever, Amazon
+ *   jsonld schema.org JobPosting   trusted even across a redirect
+ *   og     og:* / <title>          dropped when the fetch went cross-host
+ *
+ * A partial result is still a result: the caller gets whatever resolved plus an
+ * `unresolved` list, instead of the old all-or-nothing failure.
+ *
+ * Server-only.
  */
-export async function importJobFromUrl(rawUrl: string): Promise<JobImportResponse> {
-  const url = normalizeUrl(rawUrl);
+
+import { collectFromHtml } from "@/lib/job-import/collectors/html";
+import { JOB_IMPORTERS } from "@/lib/job-import/importers";
+import { JOB_IMPORT_MESSAGES } from "@/lib/job-import/messages";
+import { fetchHtmlPage, fetchJsonDocument } from "@/lib/job-import/net/fetch";
+import { inspectUrl } from "@/lib/job-import/net/guard";
+import { addDraft, emptyCandidateSet, peek, resolveCandidates } from "@/lib/job-import/provenance";
+import type {
+  FetchedPage,
+  ImportContext,
+  JobImportResponse,
+  JobImportResult,
+  NoticeCode
+} from "@/lib/job-import/types";
+import { normalizeJobUrl, parseJobUrl } from "@/lib/job-import/url-parse";
+
+const TOTAL_BUDGET_MS = 9_000;
+const HTML_TIMEOUT_MS = 8_000;
+const JSON_TIMEOUT_MS = 3_500;
+
+export type ImportFetchers = {
+  fetchHtml: (target: URL) => Promise<FetchedPage | null>;
+  fetchJson: <T>(target: URL) => Promise<T | null>;
+};
+
+export type ImportJobOptions = {
+  signal?: AbortSignal;
+  budgetMs?: number;
+  /** Test-only seam. Production always uses the guarded network layer. */
+  fetchers?: ImportFetchers;
+};
+
+export async function importJobFromUrl(
+  rawUrl: string,
+  options?: ImportJobOptions
+): Promise<JobImportResponse> {
+  const url = normalizeJobUrl(rawUrl);
   if (!url) {
-    return { ok: false, error: FALLBACK_MESSAGE };
+    return { ok: false, code: "invalid_url", error: JOB_IMPORT_MESSAGES.invalidUrl };
   }
 
-  const importer = JOB_IMPORTERS.find((item) => item.matches(url));
-  if (!importer) {
-    return { ok: false, error: FALLBACK_MESSAGE };
+  // Shape check before anything touches the network or picks an importer.
+  if (!inspectUrl(url).ok) {
+    return { ok: false, code: "blocked_url", error: JOB_IMPORT_MESSAGES.blockedUrl };
   }
 
-  const html = await fetchPageHtml(url);
-  const draft = await importer.importJob(url, html);
-  const job = draft ? toResult(url, draft) : null;
-
-  if (!job) {
-    return { ok: false, error: FALLBACK_MESSAGE };
+  const facts = parseJobUrl(url);
+  if (!facts) {
+    return { ok: false, code: "invalid_url", error: JOB_IMPORT_MESSAGES.invalidUrl };
   }
 
-  return { ok: true, job };
+  const deadline = Date.now() + (options?.budgetMs ?? TOTAL_BUDGET_MS);
+  const remainingMs = () => Math.max(deadline - Date.now(), 0);
+
+  let notice: { code: NoticeCode; message: string } | undefined;
+  const note = (code: NoticeCode, message: string) => {
+    notice ??= { code, message };
+  };
+
+  const set = emptyCandidateSet();
+  const baseOptions = { positionId: facts.positionId, host: url.hostname };
+
+  // Layer 1 — the URL. This is the tier the Quick Add sheet also runs locally.
+  addDraft(
+    set,
+    {
+      source: "url",
+      fields: {
+        company: facts.company,
+        role: facts.role,
+        jobId: facts.jobId,
+        location: facts.location
+      }
+    },
+    baseOptions
+  );
+
+  const fetchers: ImportFetchers = options?.fetchers ?? {
+    fetchHtml: (target) =>
+      fetchHtmlPage(target, {
+        signal: options?.signal,
+        timeoutMs: Math.min(remainingMs(), HTML_TIMEOUT_MS)
+      }),
+    fetchJson: <T>(target: URL) =>
+      fetchJsonDocument<T>(target, {
+        signal: options?.signal,
+        timeoutMs: Math.min(remainingMs(), JSON_TIMEOUT_MS)
+      })
+  };
+
+  const context: ImportContext = { url, facts, remainingMs, note, ...fetchers };
+
+  const importer =
+    JOB_IMPORTERS.find((item) => item.matches(facts)) ?? JOB_IMPORTERS[JOB_IMPORTERS.length - 1];
+
+  // Layer 2 — board API.
+  try {
+    for (const draft of await importer.enrich(context)) {
+      addDraft(set, draft, { ...baseOptions, company: peek(set, "company") });
+    }
+  } catch {
+    // Importers are contractually not allowed to throw, but one misbehaving
+    // board must never take down the whole import.
+  }
+
+  // Layer 3 — page HTML, only when something is still missing.
+  const needsPage = resolveCandidates(set).unresolved.length > 0;
+  if (needsPage && importer.allowHtmlFallback !== false && remainingMs() > 500) {
+    const page = await context.fetchHtml(url);
+    if (page) {
+      collectFromHtml(page, set, facts);
+      if (page.crossHost) note("legacy_host_redirect", JOB_IMPORT_MESSAGES.legacyHostRedirect);
+    }
+  }
+
+  const { values, provenance, unresolved } = resolveCandidates(set);
+
+  if (!values.company && !values.role) {
+    note("no_data", JOB_IMPORT_MESSAGES.noData);
+  }
+
+  const job: JobImportResult = {
+    company: values.company,
+    role: values.role,
+    jobId: values.jobId,
+    location: values.location,
+    jobUrl: facts.canonicalUrl,
+    description: values.description
+  };
+
+  return { ok: true, board: facts.board, job, provenance, unresolved, notice };
 }
 
-export { FALLBACK_MESSAGE };
-export type { JobImportResult, JobImportResponse };
+export { JOB_IMPORT_MESSAGES };
+export type { JobImportResponse, JobImportResult };

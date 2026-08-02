@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { BriefcaseBusiness, FolderKanban, NotebookPen, Plus, X } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
@@ -19,14 +19,16 @@ import {
 } from "@/components/quick-add/entry-sheet-types";
 import { APPLICATION_STATUSES, STATUS_LABELS } from "@/lib/applications-utils";
 import type { FieldErrors } from "@/lib/api-errors";
-import type { JobImportResult } from "@/lib/job-import/types";
+import { ImportStatus } from "@/components/quick-add/ImportStatus";
+import { useUrlImport } from "@/hooks/useUrlImport";
+import { JOB_IMPORT_MESSAGES, PROBLEM_IMPORT_FALLBACK } from "@/lib/job-import/messages";
+import type { FieldSource, JobField, JobImportSuccess } from "@/lib/job-import/types";
+import { looksLikeJobUrl, normalizeJobUrl, parseJobUrl } from "@/lib/job-import/url-parse";
 import type { ReviewPreset } from "@/lib/review-schedule";
 import { reviewDateFromPreset, withNextRevisitToast } from "@/lib/review-schedule";
 import { SavingSpinner } from "@/components/ui/SavingSpinner";
 import { toastError, toastSuccess } from "@/lib/toast";
 import { usePendingAction } from "@/hooks/usePendingAction";
-
-const JOB_IMPORT_FALLBACK = "We couldn't extract the job details. Please fill them manually.";
 
 const modes: Array<{ id: SheetMode; label: string }> = [
   { id: "problem", label: "DSA" },
@@ -175,6 +177,10 @@ function EntrySheetForm({
 
       if (mode === "application") {
         payload.resumeVersionId = resumeVersionId;
+        // The API requires a full URL; accept "stripe.com/jobs/1" and add the
+        // scheme here rather than making the user retype it.
+        const normalized = payload.jobUrl?.trim() ? normalizeJobUrl(payload.jobUrl) : null;
+        if (normalized) payload.jobUrl = normalized.toString();
       }
 
       const clientErrors = validateEntryPayload(mode, payload);
@@ -337,6 +343,7 @@ function EntrySheetForm({
                   problem={problem}
                   reviewInitial={reviewInitial}
                   onReviewChange={setReviewSchedule}
+                  saving={saving}
                 />
               ) : null}
               {mode === "application" ? (
@@ -346,6 +353,7 @@ function EntrySheetForm({
                   onClearError={clearFieldError}
                   onResumeVersionChange={setResumeVersionId}
                   resumeVersionId={resumeVersionId}
+                  saving={saving}
                 />
               ) : null}
               {mode === "project" ? (
@@ -392,18 +400,30 @@ function looksLikeLeetCodeUrl(value: string) {
   }
 }
 
+type ImportedProblem = {
+  title: string;
+  slug: string;
+  url: string;
+  difficulty: string | null;
+  topic: string;
+  pattern: string | null;
+  tags: string[];
+};
+
 function ProblemFields({
   problem,
   reviewInitial,
   onReviewChange,
   fieldErrors,
-  onClearError
+  onClearError,
+  saving
 }: {
   problem?: import("@/lib/problem-utils").ProblemRow;
   reviewInitial: { preset: ReviewPreset; customDate: string; isCustom: boolean } | null;
   onReviewChange: (value: { reviewPreset?: ReviewPreset; customReviewDate?: string }) => void;
   fieldErrors: FieldErrors;
   onClearError: (name: string) => void;
+  saving: boolean;
 }) {
   const [confidence, setConfidence] = useState(String(problem?.confidence ?? 3));
   const [url, setUrl] = useState(problem?.url ?? "");
@@ -414,59 +434,39 @@ function ProblemFields({
   );
   const [difficulty, setDifficulty] = useState(problem?.difficulty ?? "");
   const [notes, setNotes] = useState(problem?.notes ?? "");
-  const [importState, setImportState] = useState<"idle" | "loading" | "success" | "failed">("idle");
-  const [importMessage, setImportMessage] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(Boolean(problem));
-  const lastImportedUrl = useRef(problem?.url?.trim() ?? "");
-  const importRequestId = useRef(0);
+  const isEdit = Boolean(problem);
 
-  async function runImport(rawUrl: string) {
-    const trimmed = rawUrl.trim();
-    if (!looksLikeLeetCodeUrl(trimmed)) return;
-    if (trimmed === lastImportedUrl.current) return;
+  const importer = useUrlImport<ImportedProblem>({
+    endpoint: "/api/problems/import",
+    isSupportedUrl: looksLikeLeetCodeUrl,
+    autoRun: !isEdit,
+    disabled: saving,
+    loadingMessage: "Fetching LeetCode problem…",
+    fallbackMessage: PROBLEM_IMPORT_FALLBACK,
 
-    const requestId = ++importRequestId.current;
-    setImportState("loading");
-    setImportMessage("Fetching LeetCode problem…");
+    select: (body) => {
+      const parsed = body as { ok?: boolean; problem?: ImportedProblem } | null;
+      if (!parsed?.ok || !parsed.problem) return null;
+      return { result: parsed.problem, unresolved: [], notice: null };
+    },
 
-    try {
-      const response = await fetch("/api/problems/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: trimmed })
-      });
-      const body = (await response.json().catch(() => null)) as
-        | {
-            ok: true;
-            problem: {
-              title: string;
-              slug: string;
-              url: string;
-              difficulty: string | null;
-              topic: string;
-              pattern: string | null;
-              tags: string[];
-            };
-          }
-        | { ok: false; error?: string }
-        | null;
+    describe: () => "Filled from LeetCode",
 
-      if (requestId !== importRequestId.current) return;
-      lastImportedUrl.current = trimmed;
+    captureSnapshot: () => ({ url, slug, name, topicPattern, difficulty, notes }),
 
-      if (!body || !body.ok) {
-        setImportState("failed");
-        setImportMessage(
-          body && "error" in body && body.error
-            ? body.error
-            : "We couldn't fetch that LeetCode problem. Please fill the details manually."
-        );
-        setDetailsOpen(true);
-        return;
-      }
+    restoreSnapshot: (snapshot) => {
+      setUrl(snapshot.url ?? "");
+      setSlug(snapshot.slug ?? "");
+      setName(snapshot.name ?? "");
+      setTopicPattern(snapshot.topicPattern ?? "");
+      setDifficulty(snapshot.difficulty ?? "");
+      setNotes(snapshot.notes ?? "");
+      setDetailsOpen(true);
+    },
 
-      const imported = body.problem;
-      setUrl(imported.url || trimmed);
+    apply: (imported) => {
+      if (imported.url) setUrl(imported.url);
       setSlug(imported.slug);
       setName(imported.title);
       setTopicPattern(topicPatternValue(imported.topic, imported.pattern));
@@ -474,24 +474,9 @@ function ProblemFields({
       onClearError("name");
       onClearError("topicPattern");
       onClearError("url");
-      setImportState("success");
-      setImportMessage("");
-      setDetailsOpen(false);
-      lastImportedUrl.current = imported.url || trimmed;
-    } catch {
-      if (requestId !== importRequestId.current) return;
-      lastImportedUrl.current = trimmed;
-      setImportState("failed");
-      setImportMessage("We couldn't fetch that LeetCode problem. Please fill the details manually.");
-      setDetailsOpen(true);
+      setDetailsOpen(isEdit);
     }
-  }
-
-  useEffect(() => {
-    return () => {
-      importRequestId.current += 1;
-    };
-  }, []);
+  });
 
   useEffect(() => {
     if (fieldErrors.name || fieldErrors.topicPattern) {
@@ -499,7 +484,8 @@ function ProblemFields({
     }
   }, [fieldErrors]);
 
-  const showImportSummary = importState === "success" && name && topicPattern && !detailsOpen;
+  const showImportSummary =
+    importer.phase === "success" && Boolean(name) && Boolean(topicPattern) && !detailsOpen;
 
   return (
     <>
@@ -511,38 +497,37 @@ function ProblemFields({
           inputMode="url"
           value={url}
           onChange={(event) => {
-            setUrl(event.target.value);
+            const value = event.target.value;
+            setUrl(value);
             onClearError("url");
-            if (importState !== "idle" && importState !== "loading") {
-              setImportState("idle");
-              setImportMessage("");
-            }
+            importer.onUrlChange(value);
           }}
-          onPaste={() => {
-            window.setTimeout(() => {
-              const input = document.activeElement;
-              if (input instanceof HTMLInputElement) {
-                void runImport(input.value);
-              }
-            }, 0);
-          }}
+          onPaste={importer.onUrlPaste}
           onBlur={() => {
-            void runImport(url);
+            importer.onUrlBlur(url);
           }}
         />
       </QuickAddField>
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="difficulty" value={difficulty} />
 
-      {importState === "loading" || importState === "failed" ? (
-        <p
-          className={`job-import-status${importState === "failed" ? " is-error" : ""}`}
-          role="status"
-          aria-live="polite"
+      {isEdit ? (
+        <button
+          className="button secondary job-import-edit"
+          disabled={saving || !looksLikeLeetCodeUrl(url)}
+          onClick={() => importer.importNow(url)}
+          type="button"
         >
-          {importMessage}
-        </p>
+          Re-import from link
+        </button>
       ) : null}
+
+      <ImportStatus
+        message={importer.message}
+        notice={importer.notice}
+        onRetry={() => importer.importNow(url)}
+        phase={importer.phase}
+      />
 
       {showImportSummary ? (
         <div className="job-import-summary">
@@ -552,17 +537,24 @@ function ProblemFields({
               {[difficulty, topicPattern].filter(Boolean).join(" · ")}
             </p>
           </div>
-          <button
-            className="button secondary job-import-edit"
-            type="button"
-            onClick={() => setDetailsOpen(true)}
-          >
-            Edit details
-          </button>
+          <div className="job-import-summary-actions">
+            {importer.canUndo ? (
+              <button className="button secondary job-import-edit" onClick={importer.undo} type="button">
+                Undo
+              </button>
+            ) : null}
+            <button
+              className="button secondary job-import-edit"
+              type="button"
+              onClick={() => setDetailsOpen(true)}
+            >
+              Edit details
+            </button>
+          </div>
         </div>
       ) : null}
 
-      {detailsOpen || importState !== "success" ? (
+      {detailsOpen || importer.phase !== "success" ? (
         <>
           <QuickAddField error={fieldErrors.name} label="Problem name" name="name" onClearError={onClearError}>
             <input
@@ -637,15 +629,18 @@ function ProblemFields({
   );
 }
 
-function looksLikeJobUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  try {
-    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+const APPLICATION_FIELD_LABELS: Record<string, string> = {
+  company: "company",
+  role: "role",
+  jobId: "job ID",
+  location: "location"
+};
+
+/** Where an auto-filled value came from, shown next to the field label. */
+function FieldSourceChip({ source }: { source?: FieldSource }) {
+  if (!source || source === "manual") return null;
+  const label = source === "api" ? "Board" : source === "url" ? "Link" : "Page";
+  return <span className="job-import-chip">{label}</span>;
 }
 
 function ApplicationFields({
@@ -653,13 +648,15 @@ function ApplicationFields({
   resumeVersionId,
   onResumeVersionChange,
   fieldErrors,
-  onClearError
+  onClearError,
+  saving
 }: {
   application?: import("@/components/quick-add/entry-sheet-types").ApplicationEditData;
   resumeVersionId: string;
   onResumeVersionChange: (id: string) => void;
   fieldErrors: FieldErrors;
   onClearError: (name: string) => void;
+  saving: boolean;
 }) {
   const [status, setStatus] = useState(application?.status ?? "WISHLIST");
   const [jobUrl, setJobUrl] = useState(application?.jobUrl ?? "");
@@ -668,76 +665,111 @@ function ApplicationFields({
   const [jobId, setJobId] = useState(application?.jobId ?? "");
   const [location, setLocation] = useState(application?.location ?? "");
   const [notes, setNotes] = useState(application?.notes ?? "");
-  const [importState, setImportState] = useState<"idle" | "loading" | "success" | "failed">("idle");
-  const [importMessage, setImportMessage] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(Boolean(application));
-  const lastImportedUrl = useRef(application?.jobUrl?.trim() ?? "");
-  const importRequestId = useRef(0);
+  const [sources, setSources] = useState<Partial<Record<JobField, FieldSource>>>({});
+  const isEdit = Boolean(application);
 
-  async function runImport(rawUrl: string) {
-    const trimmed = rawUrl.trim();
-    if (!looksLikeJobUrl(trimmed)) return;
-    if (trimmed === lastImportedUrl.current) return;
+  function markManual(field: JobField) {
+    setSources((current) => ({ ...current, [field]: "manual" }));
+  }
 
-    const requestId = ++importRequestId.current;
-    setImportState("loading");
-    setImportMessage("Extracting job details…");
+  /**
+   * Instant tier: everything the URL alone can tell us, applied synchronously so
+   * fields populate the moment you paste. Only fills blanks — a guess must never
+   * overwrite something you typed.
+   */
+  const applyUrlFacts = useCallback(
+    (value: string) => {
+      const facts = parseJobUrl(value);
+      if (!facts) return;
 
-    try {
-      const response = await fetch("/api/jobs/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: trimmed })
-      });
-      const body = (await response.json().catch(() => null)) as
-        | { ok: true; job: JobImportResult }
-        | { ok: false; error?: string }
-        | null;
-
-      if (requestId !== importRequestId.current) return;
-
-      lastImportedUrl.current = trimmed;
-
-      if (!body || !body.ok) {
-        setImportState("failed");
-        setImportMessage(body && "error" in body && body.error ? body.error : JOB_IMPORT_FALLBACK);
-        setDetailsOpen(true);
-        return;
+      const filled: Partial<Record<JobField, FieldSource>> = {};
+      if (!company.trim() && facts.company) {
+        setCompany(facts.company);
+        filled.company = "url";
+      }
+      if (!role.trim() && facts.role) {
+        setRole(facts.role);
+        filled.role = "url";
+      }
+      if (!jobId.trim() && facts.jobId) {
+        setJobId(facts.jobId);
+        filled.jobId = "url";
+      }
+      if (!location.trim() && facts.location) {
+        setLocation(facts.location);
+        filled.location = "url";
       }
 
-      const job = body.job;
-      setJobUrl(job.jobUrl || trimmed);
-      setCompany(job.company);
-      setRole(job.role);
-      setJobId(job.jobId ?? "");
-      setLocation(job.location ?? "");
+      if (Object.keys(filled).length > 0) {
+        // Existing (stronger) provenance wins over a fresh guess.
+        setSources((current) => ({ ...filled, ...current }));
+      }
+    },
+    [company, role, jobId, location]
+  );
+
+  const importer = useUrlImport<JobImportSuccess>({
+    endpoint: "/api/jobs/import",
+    isSupportedUrl: looksLikeJobUrl,
+    // Never auto-clobber an application that already exists; edit mode gets an
+    // explicit "Re-import" button instead.
+    autoRun: !isEdit,
+    disabled: saving,
+    loadingMessage: JOB_IMPORT_MESSAGES.loading,
+    fallbackMessage: JOB_IMPORT_MESSAGES.noData,
+
+    select: (body) => {
+      const parsed = body as JobImportSuccess | null;
+      if (!parsed || parsed.ok !== true) return null;
+      return { result: parsed, unresolved: parsed.unresolved, notice: parsed.notice?.message ?? null };
+    },
+
+    describe: (outcome) => {
+      const missing = outcome.unresolved.map((field) => APPLICATION_FIELD_LABELS[field] ?? field);
+      if (!missing.length) return "Filled from the job link";
+      return `Filled what we could — add the ${missing.join(" and ")}`;
+    },
+
+    captureSnapshot: () => ({ jobUrl, company, role, jobId, location, notes }),
+
+    restoreSnapshot: (snapshot) => {
+      setJobUrl(snapshot.jobUrl ?? "");
+      setCompany(snapshot.company ?? "");
+      setRole(snapshot.role ?? "");
+      setJobId(snapshot.jobId ?? "");
+      setLocation(snapshot.location ?? "");
+      setNotes(snapshot.notes ?? "");
+      setSources({});
+      setDetailsOpen(true);
+    },
+
+    apply: (parsed) => {
+      const job = parsed.job;
+      setJobUrl(job.jobUrl);
+      // Only ever write values we actually resolved — an import that found no
+      // job ID must not wipe one the user typed.
+      if (job.company) setCompany(job.company);
+      if (job.role) setRole(job.role);
+      if (job.jobId) setJobId(job.jobId);
+      if (job.location) setLocation(job.location);
       if (job.description) {
         const snippet = job.description.slice(0, 500);
         setNotes((current) => (current.trim() ? current : snippet));
       }
-      onClearError("company");
-      onClearError("role");
-      onClearError("jobId");
-      onClearError("jobUrl");
-      onClearError("location");
-      setImportState("success");
-      setImportMessage("");
-      setDetailsOpen(false);
-      lastImportedUrl.current = job.jobUrl || trimmed;
-    } catch {
-      if (requestId !== importRequestId.current) return;
-      lastImportedUrl.current = trimmed;
-      setImportState("failed");
-      setImportMessage(JOB_IMPORT_FALLBACK);
-      setDetailsOpen(true);
-    }
-  }
 
-  useEffect(() => {
-    return () => {
-      importRequestId.current += 1;
-    };
-  }, []);
+      const next: Partial<Record<JobField, FieldSource>> = {};
+      for (const [field, entry] of Object.entries(parsed.provenance)) {
+        if (entry) next[field as JobField] = entry.source;
+      }
+      setSources(next);
+
+      for (const field of ["company", "role", "jobId", "jobUrl", "location"]) onClearError(field);
+      // Anything the import couldn't resolve still needs the user, so keep the
+      // detail fields open rather than collapsing to the summary card.
+      setDetailsOpen(parsed.unresolved.length > 0 || isEdit);
+    }
+  });
 
   useEffect(() => {
     if (fieldErrors.company || fieldErrors.role || fieldErrors.jobId || fieldErrors.location) {
@@ -745,7 +777,7 @@ function ApplicationFields({
     }
   }, [fieldErrors]);
 
-  const showImportSummary = importState === "success" && company && role && !detailsOpen;
+  const showImportSummary = importer.phase === "success" && Boolean(company) && Boolean(role) && !detailsOpen;
 
   return (
     <>
@@ -757,36 +789,41 @@ function ApplicationFields({
           inputMode="url"
           value={jobUrl}
           onChange={(event) => {
-            setJobUrl(event.target.value);
+            const value = event.target.value;
+            setJobUrl(value);
             onClearError("jobUrl");
-            if (importState !== "idle" && importState !== "loading") {
-              setImportState("idle");
-              setImportMessage("");
-            }
+            applyUrlFacts(value);
+            importer.onUrlChange(value);
           }}
-          onPaste={() => {
-            window.setTimeout(() => {
-              const input = document.activeElement;
-              if (input instanceof HTMLInputElement) {
-                void runImport(input.value);
-              }
-            }, 0);
+          onPaste={(event) => {
+            // Fill from the link before the network call even starts.
+            const pasted = event.clipboardData.getData("text");
+            if (pasted) applyUrlFacts(pasted);
+            importer.onUrlPaste(event);
           }}
           onBlur={() => {
-            void runImport(jobUrl);
+            importer.onUrlBlur(jobUrl);
           }}
         />
       </QuickAddField>
 
-      {importState === "loading" || importState === "failed" ? (
-        <p
-          className={`job-import-status${importState === "failed" ? " is-error" : ""}`}
-          role="status"
-          aria-live="polite"
+      {isEdit ? (
+        <button
+          className="button secondary job-import-edit"
+          disabled={saving || !looksLikeJobUrl(jobUrl)}
+          onClick={() => importer.importNow(jobUrl)}
+          type="button"
         >
-          {importMessage}
-        </p>
+          Re-import from link
+        </button>
       ) : null}
+
+      <ImportStatus
+        message={importer.message}
+        notice={importer.notice}
+        onRetry={() => importer.importNow(jobUrl)}
+        phase={importer.phase}
+      />
 
       {showImportSummary ? (
         <div className="job-import-summary">
@@ -800,19 +837,36 @@ function ApplicationFields({
               </p>
             ) : null}
           </div>
-          <button
-            className="button secondary job-import-edit"
-            type="button"
-            onClick={() => setDetailsOpen(true)}
-          >
-            Edit details
-          </button>
+          <div className="job-import-summary-actions">
+            {importer.canUndo ? (
+              <button className="button secondary job-import-edit" onClick={importer.undo} type="button">
+                Undo
+              </button>
+            ) : null}
+            <button
+              className="button secondary job-import-edit"
+              type="button"
+              onClick={() => setDetailsOpen(true)}
+            >
+              Edit details
+            </button>
+          </div>
         </div>
       ) : null}
 
-      {detailsOpen || importState !== "success" ? (
+      {detailsOpen || importer.phase !== "success" ? (
         <>
-          <QuickAddField error={fieldErrors.company} label="Company" name="company" onClearError={onClearError}>
+          <QuickAddField
+            error={fieldErrors.company}
+            label={
+              <>
+                Company
+                <FieldSourceChip source={sources.company} />
+              </>
+            }
+            name="company"
+            onClearError={onClearError}
+          >
             <input
               name="company"
               placeholder="Stripe"
@@ -820,39 +874,73 @@ function ApplicationFields({
               value={company}
               onChange={(event) => {
                 setCompany(event.target.value);
+                markManual("company");
                 onClearError("company");
               }}
             />
           </QuickAddField>
-          <QuickAddField error={fieldErrors.role} label="Role" name="role" onClearError={onClearError}>
+          <QuickAddField
+            error={fieldErrors.role}
+            label={
+              <>
+                Role
+                <FieldSourceChip source={sources.role} />
+              </>
+            }
+            name="role"
+            onClearError={onClearError}
+          >
             <input
               name="role"
               placeholder="Software Engineer"
               value={role}
               onChange={(event) => {
                 setRole(event.target.value);
+                markManual("role");
                 onClearError("role");
               }}
             />
           </QuickAddField>
-          <QuickAddField error={fieldErrors.jobId} label="Job ID" name="jobId" onClearError={onClearError}>
+          <QuickAddField
+            error={fieldErrors.jobId}
+            label={
+              <>
+                Job ID
+                <FieldSourceChip source={sources.jobId} />
+              </>
+            }
+            name="jobId"
+            onClearError={onClearError}
+          >
             <input
               name="jobId"
               placeholder="REQ-23918"
               value={jobId}
               onChange={(event) => {
                 setJobId(event.target.value);
+                markManual("jobId");
                 onClearError("jobId");
               }}
             />
           </QuickAddField>
-          <QuickAddField error={fieldErrors.location} label="Location" name="location" onClearError={onClearError}>
+          <QuickAddField
+            error={fieldErrors.location}
+            label={
+              <>
+                Location
+                <FieldSourceChip source={sources.location} />
+              </>
+            }
+            name="location"
+            onClearError={onClearError}
+          >
             <input
               name="location"
               placeholder="San Francisco, CA"
               value={location}
               onChange={(event) => {
                 setLocation(event.target.value);
+                markManual("location");
                 onClearError("location");
               }}
             />
@@ -995,7 +1083,8 @@ function QuickAddField({
   className = "quick-add-field"
 }: {
   name: string;
-  label: string;
+  /** ReactNode so callers can append a provenance chip beside the text. */
+  label: ReactNode;
   error?: string;
   onClearError: (name: string) => void;
   children: ReactNode;

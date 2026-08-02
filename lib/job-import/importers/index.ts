@@ -1,25 +1,40 @@
 import { amazonImporter } from "@/lib/job-import/importers/amazon";
-import { ashbyImporter } from "@/lib/job-import/importers/ashby";
-import { genericImporter } from "@/lib/job-import/importers/generic";
-import { googleImporter } from "@/lib/job-import/importers/google";
+import { eightfoldImporter } from "@/lib/job-import/importers/eightfold";
 import { greenhouseImporter } from "@/lib/job-import/importers/greenhouse";
 import { leverImporter } from "@/lib/job-import/importers/lever";
-import { linkedInImporter } from "@/lib/job-import/importers/linkedin";
-import { microsoftImporter } from "@/lib/job-import/importers/microsoft";
-import { oracleImporter } from "@/lib/job-import/importers/oracle";
-import { workdayImporter } from "@/lib/job-import/importers/workday";
+import { microsoftLegacyImporter } from "@/lib/job-import/importers/microsoft";
 import type { JobImporter } from "@/lib/job-import/types";
+import type { BoardId } from "@/lib/job-import/url-parse";
 
-/** Ordered list: first match wins. Generic is always last. */
+/**
+ * Boards with no usable public API. All of their extraction happens in
+ * url-parse.ts plus the shared JSON-LD pass, so they need no bespoke file.
+ */
+function urlOnlyImporter(board: BoardId): JobImporter {
+  return {
+    id: board,
+    matches: (facts) => facts.board === board,
+    allowHtmlFallback: true,
+    async enrich() {
+      return [];
+    }
+  };
+}
+
+/**
+ * First match wins; generic is always last. Matching is by `facts.board`, which
+ * url-parse.ts already resolved, so ordering here is mostly documentation.
+ */
 export const JOB_IMPORTERS: JobImporter[] = [
-  linkedInImporter,
+  eightfoldImporter,
   greenhouseImporter,
   leverImporter,
-  ashbyImporter,
-  workdayImporter,
-  oracleImporter,
-  microsoftImporter,
   amazonImporter,
-  googleImporter,
-  genericImporter
+  microsoftLegacyImporter,
+  urlOnlyImporter("ashby"),
+  urlOnlyImporter("workday"),
+  urlOnlyImporter("oracle"),
+  urlOnlyImporter("linkedin"),
+  urlOnlyImporter("google"),
+  urlOnlyImporter("generic")
 ];
