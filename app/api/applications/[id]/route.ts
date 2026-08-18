@@ -10,6 +10,7 @@ import {
 import { requireUser } from "@/lib/auth";
 import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
+import { deleteOneOffResume, oneOffAttachError } from "@/lib/resume-library";
 
 const updateSchema = z.object({
   company: z.string().min(2, "This field is required.").optional(),
@@ -89,9 +90,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           resumeVersionId: "Choose a resume from your library."
         });
       }
+      const attachError = await oneOffAttachError(resume, application.id);
+      if (attachError) {
+        return jsonWithFieldErrors(attachError, 400, { resumeVersionId: attachError });
+      }
       resumeVersionId = resume.id;
     }
   }
+
+  // A one-off has no life outside the application it was uploaded for.
+  const droppedOneOffId =
+    application.resumeVersionId && application.resumeVersionId !== resumeVersionId
+      ? application.resumeVersionId
+      : null;
 
   await prisma.application.update({
     where: { id },
@@ -108,6 +119,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       resumeVersionId
     }
   });
+
+  await deleteOneOffResume(droppedOneOffId);
 
   if (status !== application.status) {
     await logActivity(user.id, `Moved ${company} to ${status}`);
@@ -129,6 +142,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   await prisma.application.delete({ where: { id } });
+  // The FK is SetNull, so an attached one-off would otherwise be left unreachable.
+  await deleteOneOffResume(application.resumeVersionId);
   await logActivity(user.id, `Deleted application - ${application.company}`);
   revalidateUserDashboard(user.id);
   return NextResponse.json({ ok: true });

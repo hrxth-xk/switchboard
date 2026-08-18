@@ -8,8 +8,8 @@ import type { Application, ResumeVersion } from "@prisma/client";
 import { EntrySheet } from "@/components/quick-add/EntrySheet";
 import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import { STATUS_LABELS, applicationStatusTone } from "@/lib/applications-utils";
-import { resumeVersionLabel } from "@/lib/resume-library";
-import { formatResumeUploadedAt } from "@/lib/resume-utils";
+import { resumeDisplayLabel } from "@/lib/resume-library";
+import { canViewInline, formatResumeUploadedAt } from "@/lib/resume-utils";
 import { formatShortDate } from "@/lib/problem-utils";
 import { toastSuccess } from "@/lib/toast";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -17,7 +17,10 @@ import { usePendingAction } from "@/hooks/usePendingAction";
 
 type ApplicationDetailViewProps = {
   application: Application & {
-    resumeVersion: Pick<ResumeVersion, "id" | "name" | "version" | "originalFileName" | "createdAt"> | null;
+    resumeVersion: Pick<
+      ResumeVersion,
+      "id" | "name" | "version" | "originalFileName" | "createdAt" | "oneOff"
+    > | null;
   };
 };
 
@@ -127,26 +130,34 @@ export function ApplicationDetailView({ application }: ApplicationDetailViewProp
             {resume ? (
               <div className="detail-resume-card">
                 <div>
-                  <p className="detail-resume-title">{resumeVersionLabel(resume)}</p>
+                  <p className="detail-resume-title">{resumeDisplayLabel(resume)}</p>
                   <p className="detail-resume-file">{resume.originalFileName}</p>
                   {resume.createdAt ? (
                     <p className="detail-resume-meta">Uploaded {formatResumeUploadedAt(resume.createdAt)}</p>
                   ) : null}
                 </div>
                 <div className="detail-resume-actions">
-                  <a className="button secondary compact" href={`/api/resumes/${resume.id}/download`}>
+                  {/* `download` is what routes iOS Safari to its Downloads manager — the
+                      Content-Disposition header alone just opens the PDF viewer there. */}
+                  <a
+                    className="button secondary compact"
+                    download={resume.originalFileName}
+                    href={`/api/resumes/${resume.id}/download`}
+                  >
                     <Download size={16} />
                     Download
                   </a>
-                  <a
-                    className="button secondary compact"
-                    href={`/api/resumes/${resume.id}/download`}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    <ExternalLink size={16} />
-                    Open
-                  </a>
+                  {canViewInline(resume.originalFileName) ? (
+                    <a
+                      className="button secondary compact"
+                      href={`/api/resumes/${resume.id}/download?inline=1`}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <ExternalLink size={16} />
+                      Open
+                    </a>
+                  ) : null}
                 </div>
               </div>
             ) : (

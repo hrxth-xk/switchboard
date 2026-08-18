@@ -4642,6 +4642,7 @@ h1 {
 }
 
 .resume-library-card {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -4665,6 +4666,9 @@ h1 {
 
 .resume-library-name {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 700;
   font-size: 0.98rem;
 }
@@ -4678,11 +4682,48 @@ h1 {
   font-size: 0.82rem;
 }
 
+/* Whole card opens the resume, while the action buttons stay clickable above it. */
+.resume-library-open {
+  color: inherit;
+  text-decoration: none;
+}
+
+.resume-library-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.resume-library-card:focus-within,
+.resume-library-card:hover {
+  border-color: color-mix(in srgb, var(--text) 24%, var(--line));
+}
+
+.resume-library-open .resume-library-name svg {
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.resume-library-card:hover .resume-library-name svg {
+  color: var(--text);
+  transform: translateX(2px);
+}
+
 .resume-library-actions {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.resume-applications {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .resume-library-rename {
@@ -4738,6 +4779,56 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* Forced choice: one-off attachment vs a reusable library version. */
+.resume-intent {
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 480px) {
+  .resume-intent {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.resume-intent-option {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.resume-intent-option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--text) 24%, var(--line));
+}
+
+.resume-intent-option.active {
+  border-color: color-mix(in srgb, var(--text) 45%, var(--line));
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+}
+
+.resume-intent-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.resume-intent-title {
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.resume-intent-hint {
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .button.danger {

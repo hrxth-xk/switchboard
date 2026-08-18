@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { ResumeLibrary } from "@/components/resumes/ResumeLibrary";
 import { requireUser } from "@/lib/auth";
-import { listResumeVersions, serializeResumeVersion } from "@/lib/resume-library";
+import { listResumeVersionsWithApplicationCounts, serializeResumeVersion } from "@/lib/resume-library";
 
 export default async function ResumeLibraryPage() {
   const user = await requireUser();
-  const resumes = await listResumeVersions(user.id, { includeArchived: true });
+  const resumes = await listResumeVersionsWithApplicationCounts(user.id, { includeArchived: true });
 
   return (
     <div className="workspace-page">
@@ -15,7 +15,8 @@ export default async function ResumeLibraryPage() {
         </Link>
         <h1 className="page-title">Resume Library</h1>
         <p className="page-kicker">
-          Build a version library, then attach the right one when you add an application.
+          Build a version library, then attach the right one when you add an application. Tap a version to
+          see every application sent with it.
         </p>
       </header>
 
