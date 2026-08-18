@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { Archive, Pencil, Upload } from "lucide-react";
+import { Archive, ChevronRight, Pencil, Upload } from "lucide-react";
 import { ActionButtonContent } from "@/components/ui/ActionButtonContent";
 import type { ResumeVersionRow } from "@/lib/resume-library";
 import { toastError, toastSuccess } from "@/lib/toast";
@@ -183,9 +184,16 @@ export function ResumeLibrary({ resumes: initial }: ResumeLibraryProps) {
                 </form>
               ) : (
                 <>
-                  <div className="resume-library-copy">
-                    <p className="resume-library-name">{resume.name}</p>
-                    <p className="resume-library-meta">
+                  <Link
+                    className="resume-library-copy resume-library-open"
+                    href={`/dashboard/resumes/${resume.id}`}
+                    prefetch={false}
+                  >
+                    <span className="resume-library-name">
+                      {resume.name}
+                      <ChevronRight aria-hidden="true" size={16} />
+                    </span>
+                    <span className="resume-library-meta">
                       <span>v{resume.version}</span>
                       {resume.uploadedLabel ? (
                         <>
@@ -193,10 +201,26 @@ export function ResumeLibrary({ resumes: initial }: ResumeLibraryProps) {
                           <span>Uploaded {resume.uploadedLabel}</span>
                         </>
                       ) : null}
-                    </p>
-                  </div>
+                      {typeof resume.applicationCount === "number" ? (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span>
+                            {resume.applicationCount === 1
+                              ? "1 application"
+                              : `${resume.applicationCount} applications`}
+                          </span>
+                        </>
+                      ) : null}
+                    </span>
+                  </Link>
                   <div className="resume-library-actions">
-                    <a className="button secondary compact" href={`/api/resumes/${resume.id}/download`}>
+                    {/* `download` is what routes iOS Safari to its Downloads manager — the
+                        Content-Disposition header alone just opens the PDF viewer there. */}
+                    <a
+                      className="button secondary compact"
+                      download={resume.originalFileName}
+                      href={`/api/resumes/${resume.id}/download`}
+                    >
                       Download
                     </a>
                     {resume.archived ? (

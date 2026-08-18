@@ -15,7 +15,14 @@ export default async function ApplicationDetailPage({ params }: ApplicationDetai
     where: { id, userId: user.id },
     include: {
       resumeVersion: {
-        select: { id: true, name: true, version: true, originalFileName: true, createdAt: true }
+        select: {
+          id: true,
+          name: true,
+          version: true,
+          originalFileName: true,
+          createdAt: true,
+          oneOff: true
+        }
       }
     }
   });

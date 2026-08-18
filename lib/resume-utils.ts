@@ -8,3 +8,8 @@ export function resumeFileExtension(fileName: string) {
   const index = fileName.lastIndexOf(".");
   return index >= 0 ? fileName.slice(index).toLowerCase() : "";
 }
+
+/** Only PDFs render in a browser tab; Word files download no matter the headers. */
+export function canViewInline(fileName: string) {
+  return resumeFileExtension(fileName) === ".pdf";
+}

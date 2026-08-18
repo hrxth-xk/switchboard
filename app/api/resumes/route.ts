@@ -22,14 +22,17 @@ export async function POST(request: Request) {
   const formData = await request.formData();
   const file = formData.get("file");
   const name = typeof formData.get("name") === "string" ? String(formData.get("name")) : undefined;
+  const oneOff = formData.get("oneOff") === "1";
 
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ error: "Choose a resume file to upload." }, { status: 400 });
   }
 
   try {
-    const resume = await createResumeVersion(user.id, file, name);
-    await logActivity(user.id, `Uploaded resume ${resume.name} v${resume.version}`);
+    const resume = await createResumeVersion(user.id, file, name, { oneOff });
+    if (!resume.oneOff) {
+      await logActivity(user.id, `Uploaded resume ${resume.name} v${resume.version}`);
+    }
     return NextResponse.json({ ok: true, resume: serializeResumeVersion(resume) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not upload resume.";

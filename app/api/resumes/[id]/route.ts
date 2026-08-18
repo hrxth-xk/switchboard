@@ -11,6 +11,19 @@ const patchSchema = z.object({
   archived: z.boolean().optional()
 });
 
+/** Single resume, including one-offs — lets the picker label a non-library attachment. */
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser();
+  const { id } = await params;
+
+  const resume = await prisma.resumeVersion.findFirst({ where: { id, userId: user.id } });
+  if (!resume) {
+    return NextResponse.json({ error: "Resume not found." }, { status: 404 });
+  }
+
+  return NextResponse.json({ resume: serializeResumeVersion(resume) });
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;

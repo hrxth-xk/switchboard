@@ -11,6 +11,12 @@ export function resumeLibraryObjectPath(userId: string, resumeVersionId: string,
   return `${userId}/library/${resumeVersionId}/resume${extension}`;
 }
 
+/** One-off path: {userId}/one-off/{resumeVersionId}/resume{ext} */
+export function resumeOneOffObjectPath(userId: string, resumeVersionId: string, fileName: string) {
+  const extension = resumeFileExtension(fileName) || ".pdf";
+  return `${userId}/one-off/${resumeVersionId}/resume${extension}`;
+}
+
 /** @deprecated Legacy per-application path — kept for reading migrated files. */
 export function resumeObjectPath(userId: string, applicationId: string, fileName: string) {
   const extension = resumeFileExtension(fileName) || ".pdf";

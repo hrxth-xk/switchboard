@@ -11,6 +11,7 @@ import { requireUser } from "@/lib/auth";
 import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
 import { normalizeProblemName } from "@/lib/problem-utils";
+import { oneOffAttachError } from "@/lib/resume-library";
 import { resolveNextReviewDate, type ReviewPreset } from "@/lib/review-schedule";
 import { getRequestTimeZone } from "@/lib/timezone";
 
@@ -175,6 +176,10 @@ export async function POST(request: Request) {
         return jsonWithFieldErrors("Selected resume was not found.", 400, {
           resumeVersionId: "Choose a resume from your library."
         });
+      }
+      const attachError = await oneOffAttachError(resume);
+      if (attachError) {
+        return jsonWithFieldErrors(attachError, 400, { resumeVersionId: attachError });
       }
       resumeVersionId = resume.id;
     }
