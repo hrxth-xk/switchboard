@@ -19,6 +19,7 @@ import {
 } from "@/components/quick-add/entry-sheet-types";
 import { APPLICATION_STATUSES, STATUS_LABELS } from "@/lib/applications-utils";
 import type { FieldErrors } from "@/lib/api-errors";
+import { calendarDayKey } from "@/lib/period-utils";
 import { ImportStatus } from "@/components/quick-add/ImportStatus";
 import { useUrlImport } from "@/hooks/useUrlImport";
 import { JOB_IMPORT_MESSAGES, PROBLEM_IMPORT_FALLBACK } from "@/lib/job-import/messages";
@@ -181,6 +182,12 @@ function EntrySheetForm({
         // scheme here rather than making the user retype it.
         const normalized = payload.jobUrl?.trim() ? normalizeJobUrl(payload.jobUrl) : null;
         if (normalized) payload.jobUrl = normalized.toString();
+
+        // A picked date only carries information when it is not today. Sending
+        // today would replace the exact save instant with local noon.
+        if (!isEdit && payload.appliedAt === calendarDayKey(new Date())) {
+          delete payload.appliedAt;
+        }
       }
 
       const clientErrors = validateEntryPayload(mode, payload);
@@ -665,6 +672,11 @@ function ApplicationFields({
   const [jobId, setJobId] = useState(application?.jobId ?? "");
   const [location, setLocation] = useState(application?.location ?? "");
   const [notes, setNotes] = useState(application?.notes ?? "");
+  const [appliedAt, setAppliedAt] = useState(() =>
+    application?.appliedAt
+      ? calendarDayKey(new Date(application.appliedAt))
+      : calendarDayKey(new Date())
+  );
   const [detailsOpen, setDetailsOpen] = useState(Boolean(application));
   const [sources, setSources] = useState<Partial<Record<JobField, FieldSource>>>({});
   const isEdit = Boolean(application);
@@ -971,6 +983,29 @@ function ApplicationFields({
           ))}
         </select>
       </QuickAddField>
+      {status === "WISHLIST" ? (
+        // Nothing has been applied to yet; the empty value clears any stored date.
+        <input type="hidden" name="appliedAt" value="" />
+      ) : (
+        <QuickAddField
+          error={fieldErrors.appliedAt}
+          label="Applied on"
+          name="appliedAt"
+          onClearError={onClearError}
+        >
+          <input
+            className="quick-add-date"
+            max={calendarDayKey(new Date())}
+            name="appliedAt"
+            onChange={(event) => {
+              setAppliedAt(event.target.value);
+              onClearError("appliedAt");
+            }}
+            type="date"
+            value={appliedAt}
+          />
+        </QuickAddField>
+      )}
       <ResumeVersionSelectLoader
         error={fieldErrors.resumeVersionId}
         onChange={(id) => {

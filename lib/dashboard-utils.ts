@@ -1,8 +1,14 @@
-export function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
+import { detectTimeZone } from "@/lib/period-utils";
+
+export function formatDate(date: Date, timeZone: string = detectTimeZone()) {
+  return new Intl.DateTimeFormat("en", { timeZone, month: "short", day: "numeric" }).format(date);
 }
 
-export function formatRelativeTime(date: Date, now = new Date()) {
+export function formatRelativeTime(
+  date: Date,
+  now = new Date(),
+  timeZone: string = detectTimeZone()
+) {
   const diffMs = now.getTime() - date.getTime();
   const diffMinutes = Math.round(diffMs / 60000);
 
@@ -15,6 +21,6 @@ export function formatRelativeTime(date: Date, now = new Date()) {
   const diffDays = Math.round(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
 
-  return formatDate(date);
+  return formatDate(date, timeZone);
 }
 

@@ -3,15 +3,16 @@ import { buildActionCards } from "@/lib/action-dashboard";
 import type { UserGoalsData } from "@/lib/goals";
 import { DEFAULT_GOALS } from "@/lib/goals";
 import {
+  addCalendarDays,
   calendarDayKey,
   compareCalendarDays,
   detectTimeZone,
-  endOfDay,
-  endOfMonth,
-  endOfWeek,
-  startOfDay,
-  startOfMonth,
-  startOfWeek
+  zonedEndOfDay,
+  zonedEndOfMonth,
+  zonedEndOfWeek,
+  zonedStartOfDay,
+  zonedStartOfMonth,
+  zonedStartOfWeek
 } from "@/lib/period-utils";
 import { buildDashboardProgress, type DashboardProgress } from "@/lib/progress-metrics";
 import { buildMonthlyActivityTrend, type MonthlyActivityTrend } from "@/lib/monthly-activity-trend";
@@ -26,10 +27,8 @@ export type MacroDashboardData = {
   activityTrend: MonthlyActivityTrend;
 };
 
-function trendWindowStart(now: Date) {
-  const start = startOfDay(now);
-  start.setDate(start.getDate() - 29);
-  return start;
+function trendWindowStart(now: Date, timeZone: string) {
+  return zonedStartOfDay(addCalendarDays(now, -29, timeZone), timeZone);
 }
 
 export async function buildMacroDashboard(
@@ -37,13 +36,16 @@ export async function buildMacroDashboard(
   now = new Date(),
   timeZone: string = detectTimeZone()
 ): Promise<MacroDashboardData> {
-  const monthStart = startOfMonth(now);
-  const dayStart = startOfDay(now);
-  const dayEnd = endOfDay(now);
-  const weekStart = startOfWeek(now);
-  const weekEnd = endOfWeek(now);
-  const monthEnd = endOfMonth(now);
-  const trendStart = trendWindowStart(now);
+  // Every boundary below is the user's calendar day, not the server's. The
+  // server runs in UTC, so runtime-local boundaries would file an IST user's
+  // 05:00 entry under yesterday.
+  const monthStart = zonedStartOfMonth(now, timeZone);
+  const dayStart = zonedStartOfDay(now, timeZone);
+  const dayEnd = zonedEndOfDay(now, timeZone);
+  const weekStart = zonedStartOfWeek(now, timeZone);
+  const weekEnd = zonedEndOfWeek(now, timeZone);
+  const monthEnd = zonedEndOfMonth(now, timeZone);
+  const trendStart = trendWindowStart(now, timeZone);
   const activitySince = new Date(now.getTime() - 48 * 60 * 60 * 1000);
   const todayKey = calendarDayKey(now, timeZone);
 
@@ -133,14 +135,29 @@ export async function buildMacroDashboard(
       monthly: { dsa: monthlyDsa, applications: monthlyApplications, projects: monthlyProjects }
     },
     effectiveGoals,
-    now
+    now,
+    timeZone
   );
 
   return {
     goals: goalsData,
     progress,
-    actionCards: buildActionCards(todayActivities, metrics, goalsData, now),
-    weeklyBreakdown: buildWeeklyBreakdown(trendProblems, trendApplications, trendProjects, effectiveGoals, now),
-    activityTrend: buildMonthlyActivityTrend(trendProblems, trendApplications, trendProjects, effectiveGoals, now)
+    actionCards: buildActionCards(todayActivities, metrics, goalsData, now, timeZone),
+    weeklyBreakdown: buildWeeklyBreakdown(
+      trendProblems,
+      trendApplications,
+      trendProjects,
+      effectiveGoals,
+      now,
+      timeZone
+    ),
+    activityTrend: buildMonthlyActivityTrend(
+      trendProblems,
+      trendApplications,
+      trendProjects,
+      effectiveGoals,
+      now,
+      timeZone
+    )
   };
 }

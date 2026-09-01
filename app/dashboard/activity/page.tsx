@@ -2,9 +2,11 @@ import { ActivityFeed } from "@/components/activity/ActivityFeed";
 import { requireUser } from "@/lib/auth";
 import { mapActivityFeed } from "@/lib/activity-utils";
 import { prisma } from "@/lib/db";
+import { getRequestTimeZone } from "@/lib/timezone";
 
 export default async function ActivityPage() {
   const user = await requireUser();
+  const timeZone = getRequestTimeZone();
   const activities = await prisma.activity.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
@@ -17,7 +19,7 @@ export default async function ActivityPage() {
         <h1 className="page-title">Activity</h1>
         <p className="page-kicker">A chronological log of everything you&apos;ve done</p>
       </header>
-      <ActivityFeed items={mapActivityFeed(activities, new Date())} />
+      <ActivityFeed items={mapActivityFeed(activities, new Date(), timeZone)} />
     </div>
   );
 }

@@ -1,6 +1,12 @@
 import type { UserGoalsData } from "@/lib/goals";
 import type { PeriodCounts } from "@/lib/progress-metrics";
-import { endOfDay, startOfDay, startOfWeek } from "@/lib/period-utils";
+import {
+  calendarDayKey,
+  dayNumberFromKey,
+  detectTimeZone,
+  shiftDayKey,
+  zonedStartOfWeek
+} from "@/lib/period-utils";
 
 type ProblemTrendRow = { lastPracticed: Date };
 type ApplicationTrendRow = { appliedAt: Date | null; status: string };
@@ -15,33 +21,26 @@ export type WeeklyDayBreakdown = {
   targets: PeriodCounts;
 };
 
-function countDsaForDay(problems: ProblemTrendRow[], day: Date) {
-  const start = startOfDay(day);
-  const end = endOfDay(day);
-
-  return problems.filter(
-    (problem) => problem.lastPracticed >= start && problem.lastPracticed <= end
-  ).length;
+function countDsaForDay(problems: ProblemTrendRow[], dayKey: string, timeZone: string) {
+  return problems.filter((problem) => calendarDayKey(problem.lastPracticed, timeZone) === dayKey)
+    .length;
 }
 
-function countApplicationsForDay(applications: ApplicationTrendRow[], day: Date) {
-  const start = startOfDay(day);
-  const end = endOfDay(day);
-
+function countApplicationsForDay(
+  applications: ApplicationTrendRow[],
+  dayKey: string,
+  timeZone: string
+) {
   return applications.filter(
     (application) =>
       application.status !== "WISHLIST" &&
       application.appliedAt &&
-      application.appliedAt >= start &&
-      application.appliedAt <= end
+      calendarDayKey(application.appliedAt, timeZone) === dayKey
   ).length;
 }
 
-function countProjectsForDay(projects: ProjectTrendRow[], day: Date) {
-  const start = startOfDay(day);
-  const end = endOfDay(day);
-
-  return projects.filter((project) => project.updatedAt >= start && project.updatedAt <= end).length;
+function countProjectsForDay(projects: ProjectTrendRow[], dayKey: string, timeZone: string) {
+  return projects.filter((project) => calendarDayKey(project.updatedAt, timeZone) === dayKey).length;
 }
 
 function dailyTargets(goals: UserGoalsData): PeriodCounts {
@@ -57,27 +56,27 @@ export function buildWeeklyBreakdown(
   applications: ApplicationTrendRow[],
   projects: ProjectTrendRow[],
   goals: UserGoalsData,
-  now = new Date()
+  now = new Date(),
+  timeZone: string = detectTimeZone()
 ): WeeklyDayBreakdown[] {
-  const weekStart = startOfWeek(now);
-  const todayStart = startOfDay(now);
+  const weekStartKey = calendarDayKey(zonedStartOfWeek(now, timeZone), timeZone);
+  const todayKey = calendarDayKey(now, timeZone);
   const targets = dailyTargets(goals);
   const shortLabels = ["M", "T", "W", "T", "F", "S", "S"];
 
   return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(weekStart);
-    date.setDate(weekStart.getDate() + index);
-    const dayStart = startOfDay(date);
+    const dayKey = shiftDayKey(weekStartKey, index);
 
     return {
       shortLabel: shortLabels[index],
-      dayNumber: date.getDate(),
-      isToday: dayStart.getTime() === todayStart.getTime(),
-      isFuture: dayStart.getTime() > todayStart.getTime(),
+      dayNumber: dayNumberFromKey(dayKey),
+      // Day keys are ISO-ordered, so string comparison is calendar comparison.
+      isToday: dayKey === todayKey,
+      isFuture: dayKey > todayKey,
       counts: {
-        dsa: countDsaForDay(problems, date),
-        applications: countApplicationsForDay(applications, date),
-        projects: countProjectsForDay(projects, date)
+        dsa: countDsaForDay(problems, dayKey, timeZone),
+        applications: countApplicationsForDay(applications, dayKey, timeZone),
+        projects: countProjectsForDay(projects, dayKey, timeZone)
       },
       targets
     };

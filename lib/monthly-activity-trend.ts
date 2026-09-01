@@ -1,5 +1,5 @@
 import type { UserGoalsData } from "@/lib/goals";
-import { endOfDay, startOfDay } from "@/lib/period-utils";
+import { calendarDayKey, detectTimeZone, shiftDayKey } from "@/lib/period-utils";
 
 type ProblemTrendRow = { lastPracticed: Date };
 type ApplicationTrendRow = { appliedAt: Date | null; status: string };
@@ -19,33 +19,26 @@ export type MonthlyActivityTrend = {
 /** Height % where the daily target line sits from the chart bottom. */
 export const TARGET_LINE_PERCENT = 68;
 
-function countDsaForDay(problems: ProblemTrendRow[], day: Date) {
-  const start = startOfDay(day);
-  const end = endOfDay(day);
-
-  return problems.filter(
-    (problem) => problem.lastPracticed >= start && problem.lastPracticed <= end
-  ).length;
+function countDsaForDay(problems: ProblemTrendRow[], dayKey: string, timeZone: string) {
+  return problems.filter((problem) => calendarDayKey(problem.lastPracticed, timeZone) === dayKey)
+    .length;
 }
 
-function countApplicationsForDay(applications: ApplicationTrendRow[], day: Date) {
-  const start = startOfDay(day);
-  const end = endOfDay(day);
-
+function countApplicationsForDay(
+  applications: ApplicationTrendRow[],
+  dayKey: string,
+  timeZone: string
+) {
   return applications.filter(
     (application) =>
       application.status !== "WISHLIST" &&
       application.appliedAt &&
-      application.appliedAt >= start &&
-      application.appliedAt <= end
+      calendarDayKey(application.appliedAt, timeZone) === dayKey
   ).length;
 }
 
-function countProjectsForDay(projects: ProjectTrendRow[], day: Date) {
-  const start = startOfDay(day);
-  const end = endOfDay(day);
-
-  return projects.filter((project) => project.updatedAt >= start && project.updatedAt <= end).length;
+function countProjectsForDay(projects: ProjectTrendRow[], dayKey: string, timeZone: string) {
+  return projects.filter((project) => calendarDayKey(project.updatedAt, timeZone) === dayKey).length;
 }
 
 export function dailyActionTarget(goals: UserGoalsData) {
@@ -85,25 +78,25 @@ export function buildMonthlyActivityTrend(
   applications: ApplicationTrendRow[],
   projects: ProjectTrendRow[],
   goals: UserGoalsData,
-  now = new Date()
+  now = new Date(),
+  timeZone: string = detectTimeZone()
 ): MonthlyActivityTrend {
-  const todayStart = startOfDay(now);
+  const todayKey = calendarDayKey(now, timeZone);
   const dailyTarget = dailyActionTarget(goals);
 
   const days = Array.from({ length: 30 }, (_, index) => {
-    const date = new Date(todayStart);
-    date.setDate(todayStart.getDate() - (29 - index));
+    const dayKey = shiftDayKey(todayKey, index - 29);
 
     const completionPercent = dayCompletionPercent(
-      countDsaForDay(problems, date),
-      countApplicationsForDay(applications, date),
-      countProjectsForDay(projects, date),
+      countDsaForDay(problems, dayKey, timeZone),
+      countApplicationsForDay(applications, dayKey, timeZone),
+      countProjectsForDay(projects, dayKey, timeZone),
       goals
     );
 
     return {
       completionPercent,
-      isToday: startOfDay(date).getTime() === todayStart.getTime()
+      isToday: dayKey === todayKey
     };
   });
 

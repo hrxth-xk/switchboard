@@ -10,6 +10,7 @@ import {
 import { requireUser } from "@/lib/auth";
 import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
+import { civilDateToZonedNoon } from "@/lib/period-utils";
 import { normalizeProblemName } from "@/lib/problem-utils";
 import { oneOffAttachError } from "@/lib/resume-library";
 import { resolveNextReviewDate, type ReviewPreset } from "@/lib/review-schedule";
@@ -160,9 +161,11 @@ export async function POST(request: Request) {
       });
     }
 
+    // A picked day is anchored at local noon; without a date we fall back to the
+    // moment of save, which is already the right instant.
     const appliedAt =
       data.appliedAt && data.status !== "WISHLIST"
-        ? new Date(data.appliedAt)
+        ? civilDateToZonedNoon(data.appliedAt, getRequestTimeZone())
         : ["APPLIED", "OA", "INTERVIEW", "OFFER"].includes(data.status)
           ? now
           : null;

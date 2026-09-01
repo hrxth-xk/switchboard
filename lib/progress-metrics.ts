@@ -1,8 +1,8 @@
 import type { UserGoalsData } from "@/lib/goals";
 import {
-  daysElapsedInMonth,
-  daysElapsedInWeek,
-  daysInMonth
+  detectTimeZone,
+  zonedDaysElapsedInWeek,
+  zonedDaysInMonth
 } from "@/lib/period-utils";
 
 export type MetricKey = "dsa" | "applications" | "projects";
@@ -80,7 +80,8 @@ export function buildPeriodProgress(counts: PeriodCounts, targets: PeriodCounts)
 export function buildDashboardProgress(
   counts: ProgressCountsByPeriod,
   goals: UserGoalsData,
-  now = new Date()
+  now = new Date(),
+  timeZone: string = detectTimeZone()
 ): DashboardProgress {
   const dailyCounts = counts.daily;
   const weeklyCounts = counts.weekly;
@@ -90,16 +91,18 @@ export function buildDashboardProgress(
 
   const daily = buildPeriodProgress(dailyCounts, perDay);
 
+  const daysThisWeek = zonedDaysElapsedInWeek(now, timeZone);
   const weekly = buildPeriodProgress(weeklyCounts, {
-    dsa: perDay.dsa * daysElapsedInWeek(now),
-    applications: perDay.applications * daysElapsedInWeek(now),
-    projects: perDay.projects * daysElapsedInWeek(now)
+    dsa: perDay.dsa * daysThisWeek,
+    applications: perDay.applications * daysThisWeek,
+    projects: perDay.projects * daysThisWeek
   });
 
+  const daysThisMonth = zonedDaysInMonth(now, timeZone);
   const monthlyTargets: PeriodCounts = {
-    dsa: perDay.dsa * daysInMonth(now),
-    applications: perDay.applications * daysInMonth(now),
-    projects: perDay.projects * daysInMonth(now)
+    dsa: perDay.dsa * daysThisMonth,
+    applications: perDay.applications * daysThisMonth,
+    projects: perDay.projects * daysThisMonth
   };
 
   const monthlyDifferences: PeriodCounts = {

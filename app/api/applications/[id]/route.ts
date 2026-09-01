@@ -10,7 +10,9 @@ import {
 import { requireUser } from "@/lib/auth";
 import { revalidateUserDashboard } from "@/lib/dashboard-cache";
 import { prisma } from "@/lib/db";
+import { calendarDayKey, civilDateToZonedNoon } from "@/lib/period-utils";
 import { deleteOneOffResume, oneOffAttachError } from "@/lib/resume-library";
+import { getRequestTimeZone } from "@/lib/timezone";
 
 const updateSchema = z.object({
   company: z.string().min(2, "This field is required.").optional(),
@@ -67,13 +69,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const status = body.status ?? application.status;
   const now = new Date();
+  const timeZone = getRequestTimeZone();
   let appliedAt = application.appliedAt;
 
   if (body.appliedAt) {
-    appliedAt = new Date(body.appliedAt);
+    // Leave the stored instant alone when the picker still shows the same civil
+    // day, so a routine edit cannot rewrite when you actually applied.
+    const unchanged =
+      appliedAt && calendarDayKey(appliedAt, timeZone) === body.appliedAt.trim();
+    if (!unchanged) {
+      appliedAt = civilDateToZonedNoon(body.appliedAt, timeZone);
+    }
   } else if (body.appliedAt === "") {
     appliedAt = null;
-  } else   if (status !== "WISHLIST" && !appliedAt && status !== application.status) {
+  } else if (status !== "WISHLIST" && !appliedAt && status !== application.status) {
     appliedAt = now;
   }
 

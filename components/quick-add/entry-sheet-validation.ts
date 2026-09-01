@@ -1,6 +1,7 @@
 import type { FieldErrors } from "@/lib/api-errors";
 import type { SheetMode } from "@/components/quick-add/entry-sheet-types";
 import { normalizeJobUrl } from "@/lib/job-import/url-parse";
+import { calendarDayKey } from "@/lib/period-utils";
 
 export class EntrySheetSubmitError extends Error {
   fieldErrors?: FieldErrors;
@@ -42,6 +43,14 @@ export function validateEntryPayload(mode: SheetMode, payload: Record<string, st
     // the import gate and then be rejected here.
     if (payload.jobUrl?.trim() && !normalizeJobUrl(payload.jobUrl)) {
       errors.jobUrl = "Enter a valid URL.";
+    }
+    const appliedAt = payload.appliedAt?.trim();
+    if (appliedAt) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(appliedAt)) {
+        errors.appliedAt = "Enter a valid date.";
+      } else if (appliedAt > calendarDayKey(new Date())) {
+        errors.appliedAt = "This date is in the future.";
+      }
     }
   }
 
