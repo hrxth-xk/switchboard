@@ -1,6 +1,13 @@
 import type { Activity } from "@prisma/client";
 import { formatDate, formatRelativeTime } from "@/lib/dashboard-utils";
-import { endOfDay, isWithinRange, startOfDay, startOfWeek } from "@/lib/period-utils";
+import {
+  calendarDayKey,
+  detectTimeZone,
+  endOfDay,
+  isWithinRange,
+  startOfDay,
+  startOfWeek
+} from "@/lib/period-utils";
 
 export type ActivityCategory = "DSA" | "Applications" | "Projects" | "Notes" | "Other";
 
@@ -50,25 +57,34 @@ function parseActivityTitle(label: string) {
   return label;
 }
 
-export function mapActivityFeed(activities: Activity[], now = new Date()): ActivityFeedItem[] {
+export function mapActivityFeed(
+  activities: Activity[],
+  now = new Date(),
+  timeZone: string = detectTimeZone()
+): ActivityFeedItem[] {
   return activities.map((activity) => ({
     id: activity.id,
     title: parseActivityTitle(activity.label),
     category: classifyActivity(activity.label),
-    timestamp: formatActivityTimestamp(activity.createdAt, now),
+    timestamp: formatActivityTimestamp(activity.createdAt, now, timeZone),
     createdAt: activity.createdAt.toISOString()
   }));
 }
 
-export function formatActivityTimestamp(date: Date, now = new Date()) {
-  const dayStart = startOfDay(now);
-  const targetDay = startOfDay(date);
-
-  if (targetDay.getTime() === dayStart.getTime()) {
-    return formatRelativeTime(date, now);
+/**
+ * Runs server-side via mapActivityFeed, so "is this today" must be answered in
+ * the caller's zone, not the runtime's.
+ */
+export function formatActivityTimestamp(
+  date: Date,
+  now = new Date(),
+  timeZone: string = detectTimeZone()
+) {
+  if (calendarDayKey(date, timeZone) === calendarDayKey(now, timeZone)) {
+    return formatRelativeTime(date, now, timeZone);
   }
 
-  return formatDate(date);
+  return formatDate(date, timeZone);
 }
 
 export function filterActivities(

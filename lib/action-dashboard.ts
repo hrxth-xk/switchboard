@@ -1,6 +1,6 @@
 import type { UserGoalsData } from "@/lib/goals";
 import { DEFAULT_GOALS } from "@/lib/goals";
-import { endOfDay, isWithinRange, startOfDay } from "@/lib/period-utils";
+import { calendarDayKey, detectTimeZone } from "@/lib/period-utils";
 
 type ActivityRow = {
   label: string;
@@ -37,33 +37,31 @@ export type ActionCardsData = {
   };
 };
 
-function countSolvedToday(activities: ActivityRow[], now: Date) {
-  const dayStart = startOfDay(now);
-  const dayEnd = endOfDay(now);
-
+function countSolvedToday(activities: ActivityRow[], todayKey: string, timeZone: string) {
   return activities.filter(
     (activity) =>
-      activity.label.startsWith("Solved ") && isWithinRange(activity.createdAt, dayStart, dayEnd)
+      activity.label.startsWith("Solved ") &&
+      calendarDayKey(activity.createdAt, timeZone) === todayKey
   ).length;
 }
 
-function countTodayActivities(activities: ActivityRow[], now: Date) {
-  const dayStart = startOfDay(now);
-  const dayEnd = endOfDay(now);
-
-  return activities.filter((activity) => isWithinRange(activity.createdAt, dayStart, dayEnd)).length;
+function countTodayActivities(activities: ActivityRow[], todayKey: string, timeZone: string) {
+  return activities.filter((activity) => calendarDayKey(activity.createdAt, timeZone) === todayKey)
+    .length;
 }
 
 export function buildActionCards(
   activities: ActivityRow[],
   metrics: ActionCardMetrics,
   goals: UserGoalsData | null,
-  now = new Date()
+  now = new Date(),
+  timeZone: string = detectTimeZone()
 ): ActionCardsData {
   const effectiveGoals = goals ?? DEFAULT_GOALS;
-  const todayCount = countTodayActivities(activities, now);
+  const todayKey = calendarDayKey(now, timeZone);
+  const todayCount = countTodayActivities(activities, todayKey, timeZone);
   const { reviewDue, applicationsTotal, activeProjects } = metrics;
-  const solvedToday = countSolvedToday(activities, now);
+  const solvedToday = countSolvedToday(activities, todayKey, timeZone);
   const problemsLeft = Math.max(effectiveGoals.dailyDsaGoal - solvedToday, 0);
 
   const dsaMetric =
